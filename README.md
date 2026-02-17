@@ -9,7 +9,12 @@ Petting Zoo is an application layer for the [`zoo-keeper`](https://github.com/cr
 - MCP connector support for external tools/resources
 
 ## Status
-Phase 0 (contracts and foundations) is implemented. See `APPLICATION_PLAN.md` for the full phased roadmap.
+Phase 1 skeleton is implemented:
+- `apps/server`: Drogon host with `/healthz` and SPA/static serving
+- `apps/web`: Svelte + TypeScript + Vite frontend scaffold
+- CMake build integration to produce and serve web assets
+
+See `APPLICATION_PLAN.md` for the full phased roadmap.
 
 ## Phase 0 Artifacts
 - REST API contract: `docs/api/openapi.yaml`
@@ -20,6 +25,19 @@ Phase 0 (contracts and foundations) is implemented. See `APPLICATION_PLAN.md` fo
 ## Submodule Setup
 - Initialize dependencies after clone:
   - `git submodule update --init --recursive`
+
+## Quickstart
+1. Configure and build:
+   - `cmake -S . -B build`
+   - `cmake --build build -j`
+2. Run the server:
+   - `./build/apps/server/petting_zoo_server`
+3. Open:
+   - `http://127.0.0.1:8080`
+
+Notes:
+- By default, CMake attempts `npm ci && npm run build` in `apps/web` to produce assets.
+- If npm build fails, fallback static assets in `apps/web/fallback-dist/` are served.
 
 ## Goals
 - Keep core inference logic in `zoo-keeper`

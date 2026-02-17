@@ -9,7 +9,7 @@ Petting Zoo is an application layer for the [`zoo-keeper`](https://github.com/cr
 - MCP connector support for external tools/resources
 
 ## Status
-Implemented through an MCP management slice:
+Implemented through an MCP management + minimal runtime interaction slice:
 - `apps/server`: Drogon host with `/healthz` and SPA/static serving
 - `apps/web`: Svelte + TypeScript + Vite frontend scaffold
 - CMake build integration to produce and serve web assets
@@ -22,6 +22,15 @@ Implemented through an MCP management slice:
   - `POST /api/mcp/connectors/{id}/refresh-tools`
   - `GET /api/mcp/connectors/{id}/tools`
 - MCP connector management UI (template/custom create, validate, connect/disconnect, tool list)
+- Model runtime endpoints:
+  - `GET /api/models`
+  - `POST /api/models/register`
+  - `POST /api/models/select`
+  - `POST /api/chat/complete`
+  - `POST /api/chat/reset`
+- Web UI sections for:
+  - model registration/loading from server filesystem
+  - prompt/response interaction with active loaded model
 
 See `APPLICATION_PLAN.md` for the full phased roadmap.
 
@@ -47,6 +56,21 @@ See `APPLICATION_PLAN.md` for the full phased roadmap.
 Notes:
 - By default, CMake attempts `npm ci && npm run build` in `apps/web` to produce assets.
 - If npm build fails, fallback static assets in `apps/web/fallback-dist/` are served.
+
+## Testing
+Run all project tests (C++ + server smoke + frontend unit tests) through CTest:
+
+1. Configure with tests enabled:
+   - `cmake -S . -B build -DPETTING_ZOO_BUILD_TESTS=ON`
+2. Build:
+   - `cmake --build build -j`
+3. Run:
+   - `ctest --test-dir build --output-on-failure`
+
+You can also use the unified target:
+- `cmake --build build --target check`
+
+CI runs this test flow automatically on every push and pull request via `.github/workflows/ci.yml`.
 
 ## Goals
 - Keep core inference logic in `zoo-keeper`

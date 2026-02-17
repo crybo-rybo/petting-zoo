@@ -73,6 +73,35 @@ paths:
                   active_model_id:
                     type: string
                     nullable: true
+  /api/models/register:
+    post:
+      tags: [Models]
+      summary: Register a local GGUF model path on the server host
+      operationId: registerModel
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelRegisterRequest'
+      responses:
+        '201':
+          description: Model registered
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [model]
+                properties:
+                  model:
+                    $ref: '#/components/schemas/ModelSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /api/models/select:
     post:
       tags: [Models]
@@ -230,6 +259,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /api/chat/complete:
+    post:
+      tags: [Chat]
+      summary: Send a user message to the active model and wait for completion
+      operationId: completeChat
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompleteRequest'
+      responses:
+        '200':
+          description: Completion returned
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompleteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+  /api/chat/reset:
+    post:
+      tags: [Chat]
+      summary: Clear conversation history for the active model
+      operationId: resetChat
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+      responses:
+        '200':
+          description: History cleared
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResetResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /api/kb/upload:
     post:
       tags: [Knowledge Base]
@@ -701,6 +778,16 @@ components:
       properties:
         model_id:
           type: string
+    ModelRegisterRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: Absolute or server-relative path to a GGUF file on the server host.
+        display_name:
+          type: string
+          description: Optional UI display name.
     SessionSummary:
       type: object
       required: [id, title, created_at, updated_at]
@@ -768,6 +855,53 @@ components:
         accepted_at:
           type: string
           format: date-time
+    ChatCompleteRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+    ChatCompleteResponse:
+      type: object
+      required: [text, usage, metrics]
+      properties:
+        text:
+          type: string
+        usage:
+          type: object
+          required: [prompt_tokens, completion_tokens, total_tokens]
+          properties:
+            prompt_tokens:
+              type: integer
+              minimum: 0
+            completion_tokens:
+              type: integer
+              minimum: 0
+            total_tokens:
+              type: integer
+              minimum: 0
+        metrics:
+          type: object
+          required: [latency_ms, time_to_first_token_ms, tokens_per_second]
+          properties:
+            latency_ms:
+              type: integer
+              minimum: 0
+            time_to_first_token_ms:
+              type: integer
+              minimum: 0
+            tokens_per_second:
+              type: number
+    ChatResetResponse:
+      type: object
+      required: [status, model_id]
+      properties:
+        status:
+          type: string
+          const: cleared
+        model_id:
+          type: string
     KnowledgeDocument:
       type: object
       required: [id, name, status, created_at]

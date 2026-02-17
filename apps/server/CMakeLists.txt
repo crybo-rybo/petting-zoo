@@ -9,6 +9,7 @@ else()
 endif()
 
 target_link_libraries(petting_zoo_server PRIVATE zoo)
+target_link_libraries(petting_zoo_server PRIVATE zoo_backend)
 
 target_compile_features(petting_zoo_server PRIVATE cxx_std_20)
 

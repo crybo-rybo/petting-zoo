@@ -2,6 +2,7 @@
 #include <drogon/drogon.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -16,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include <zoo/agent.hpp>
 #include <zoo/mcp/mcp_client.hpp>
 
 namespace {
@@ -58,6 +60,14 @@ struct TemplateEntry {
   std::vector<std::string> args;
   std::string endpoint;
   std::vector<std::string> required_fields;
+};
+
+struct ModelEntry {
+  std::string id;
+  std::string display_name;
+  std::string path;
+  std::string status = "available";
+  int context_size = 8192;
 };
 
 std::string now_rfc3339_utc() {
@@ -229,6 +239,16 @@ Json::Value template_to_json(const TemplateEntry &entry) {
   return out;
 }
 
+Json::Value model_to_json(const ModelEntry &model) {
+  Json::Value out(Json::objectValue);
+  out["id"] = model.id;
+  out["display_name"] = model.display_name;
+  out["path"] = model.path;
+  out["status"] = model.status;
+  out["context_size"] = model.context_size;
+  return out;
+}
+
 Json::Value jsoncpp_from_nlohmann(const nlohmann::json &value) {
   Json::CharReaderBuilder builder;
   Json::Value out;
@@ -362,6 +382,251 @@ Json::Value run_validation_checks(const ParsedConnectorRequest &req) {
 
   return checks;
 }
+
+std::string sanitize_model_id(std::string input) {
+  for (char &ch : input) {
+    const auto uch = static_cast<unsigned char>(ch);
+    if (std::isalnum(uch)) {
+      ch = static_cast<char>(std::tolower(uch));
+    } else {
+      ch = '-';
+    }
+  }
+
+  while (!input.empty() && input.front() == '-') {
+    input.erase(input.begin());
+  }
+  while (!input.empty() && input.back() == '-') {
+    input.pop_back();
+  }
+  if (input.empty()) {
+    return "model";
+  }
+  return input;
+}
+
+struct ParsedModelRegisterRequest {
+  std::string path;
+  std::optional<std::string> display_name;
+};
+
+std::optional<std::string> parse_model_register_request(const JsonPtr &json,
+                                                        ParsedModelRegisterRequest &out,
+                                                        Json::Value &details) {
+  if (!json || !json->isObject()) {
+    return "Body must be a JSON object";
+  }
+
+  const auto &obj = *json;
+  if (!obj.isMember("path") || !obj["path"].isString()) {
+    details["field"] = "path";
+    return "Field 'path' is required and must be a string";
+  }
+  out.path = obj["path"].asString();
+  if (out.path.empty()) {
+    details["field"] = "path";
+    return "Field 'path' cannot be empty";
+  }
+
+  if (obj.isMember("display_name")) {
+    if (!obj["display_name"].isString()) {
+      details["field"] = "display_name";
+      return "Field 'display_name' must be a string";
+    }
+    const auto value = obj["display_name"].asString();
+    if (!value.empty()) {
+      out.display_name = value;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<std::string> parse_model_select_request(const JsonPtr &json,
+                                                      std::string &model_id,
+                                                      Json::Value &details) {
+  if (!json || !json->isObject()) {
+    return "Body must be a JSON object";
+  }
+  const auto &obj = *json;
+  if (!obj.isMember("model_id") || !obj["model_id"].isString()) {
+    details["field"] = "model_id";
+    return "Field 'model_id' is required and must be a string";
+  }
+  model_id = obj["model_id"].asString();
+  if (model_id.empty()) {
+    details["field"] = "model_id";
+    return "Field 'model_id' cannot be empty";
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> parse_chat_complete_request(const JsonPtr &json,
+                                                       std::string &message,
+                                                       Json::Value &details) {
+  if (!json || !json->isObject()) {
+    return "Body must be a JSON object";
+  }
+  const auto &obj = *json;
+  if (!obj.isMember("message") || !obj["message"].isString()) {
+    details["field"] = "message";
+    return "Field 'message' is required and must be a string";
+  }
+  message = obj["message"].asString();
+  if (message.empty()) {
+    details["field"] = "message";
+    return "Field 'message' cannot be empty";
+  }
+  return std::nullopt;
+}
+
+class RuntimeState {
+ public:
+  std::vector<ModelEntry> list_models() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    std::vector<ModelEntry> out;
+    out.reserve(models_.size());
+    for (const auto &item : models_) {
+      auto model = item.second;
+      model.status = std::filesystem::exists(model.path) ? "available" : "unavailable";
+      out.push_back(std::move(model));
+    }
+    std::sort(out.begin(), out.end(), [](const ModelEntry &a, const ModelEntry &b) {
+      return a.display_name < b.display_name;
+    });
+    return out;
+  }
+
+  std::optional<std::string> active_model_id() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return active_model_id_;
+  }
+
+  std::optional<ModelEntry> register_model(const ParsedModelRegisterRequest &req,
+                                           std::string &error_code,
+                                           std::string &error_message) {
+    namespace fs = std::filesystem;
+    const fs::path model_path = fs::path(req.path).lexically_normal();
+    if (!fs::exists(model_path) || !fs::is_regular_file(model_path)) {
+      error_code = "APP-VAL-001";
+      error_message = "Model path does not exist or is not a regular file";
+      return std::nullopt;
+    }
+
+    const std::string display_name = req.display_name.value_or(model_path.filename().string());
+    std::string id = sanitize_model_id(model_path.stem().string());
+    if (id.empty()) {
+      id = "model";
+    }
+
+    std::lock_guard<std::mutex> lock(mu_);
+    if (models_.contains(id) && models_[id].path != model_path.string()) {
+      int suffix = 2;
+      std::string base = id;
+      do {
+        id = base + "-" + std::to_string(suffix++);
+      } while (models_.contains(id));
+    }
+
+    ModelEntry model;
+    model.id = id;
+    model.display_name = display_name;
+    model.path = model_path.string();
+    model.status = "available";
+    models_[model.id] = model;
+    return model;
+  }
+
+  std::optional<ModelEntry> select_model(const std::string &model_id,
+                                         std::string &error_code,
+                                         std::string &error_message) {
+    ModelEntry selected;
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      const auto it = models_.find(model_id);
+      if (it == models_.end()) {
+        error_code = "APP-MOD-404";
+        error_message = "Model not found";
+        return std::nullopt;
+      }
+      selected = it->second;
+    }
+
+    if (!std::filesystem::exists(selected.path)) {
+      error_code = "APP-VAL-001";
+      error_message = "Model path is no longer available";
+      return std::nullopt;
+    }
+
+    zoo::Config config;
+    config.model_path = selected.path;
+    config.context_size = selected.context_size;
+    config.max_tokens = 512;
+
+    auto created = zoo::Agent::create(config);
+    if (!created) {
+      error_code = "APP-UPSTREAM-001";
+      error_message = created.error().to_string();
+      return std::nullopt;
+    }
+
+    std::shared_ptr<zoo::Agent> loaded(std::move(*created));
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      agent_ = std::move(loaded);
+      active_model_id_ = selected.id;
+    }
+    return selected;
+  }
+
+  std::optional<zoo::Response> chat_complete(const std::string &message,
+                                             std::string &error_code,
+                                             std::string &error_message) {
+    std::shared_ptr<zoo::Agent> agent;
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      agent = agent_;
+    }
+    if (!agent) {
+      error_code = "APP-STATE-409";
+      error_message = "No active model is loaded";
+      return std::nullopt;
+    }
+
+    auto handle = agent->chat(zoo::Message::user(message));
+    auto result = handle.future.get();
+    if (!result) {
+      error_code = "APP-UPSTREAM-001";
+      error_message = result.error().to_string();
+      return std::nullopt;
+    }
+    return *result;
+  }
+
+  std::optional<std::string> reset_chat(std::string &error_code,
+                                        std::string &error_message) {
+    std::shared_ptr<zoo::Agent> agent;
+    std::optional<std::string> model_id;
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      agent = agent_;
+      model_id = active_model_id_;
+    }
+    if (!agent || !model_id.has_value()) {
+      error_code = "APP-STATE-409";
+      error_message = "No active model is loaded";
+      return std::nullopt;
+    }
+    agent->clear_history();
+    return model_id;
+  }
+
+ private:
+  mutable std::mutex mu_;
+  std::unordered_map<std::string, ModelEntry> models_;
+  std::optional<std::string> active_model_id_;
+  std::shared_ptr<zoo::Agent> agent_;
+};
 
 class McpState {
  public:
@@ -595,6 +860,7 @@ class McpState {
 int main() {
   namespace fs = std::filesystem;
 
+  static RuntimeState runtime_state;
   static McpState mcp_state;
 
   const fs::path web_root = fs::path(PETTING_ZOO_WEB_ROOT);
@@ -618,6 +884,172 @@ int main() {
         write_json(req, resp, body, drogon::k200OK);
         cb(resp);
       });
+
+  drogon::app().registerHandler(
+      "/api/models",
+      [](const drogon::HttpRequestPtr &req,
+         std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
+        Json::Value body(Json::objectValue);
+        Json::Value models(Json::arrayValue);
+        for (const auto &model : runtime_state.list_models()) {
+          models.append(model_to_json(model));
+        }
+        body["models"] = models;
+        if (const auto active = runtime_state.active_model_id(); active.has_value()) {
+          body["active_model_id"] = *active;
+        } else {
+          body["active_model_id"] = Json::nullValue;
+        }
+
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        write_json(req, resp, body);
+        cb(resp);
+      },
+      {drogon::Get});
+
+  drogon::app().registerHandler(
+      "/api/models/register",
+      [](const drogon::HttpRequestPtr &req,
+         std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
+        ParsedModelRegisterRequest parsed;
+        Json::Value details(Json::objectValue);
+        if (const auto parse_error =
+                parse_model_register_request(req->getJsonObject(), parsed, details);
+            parse_error.has_value()) {
+          write_error(req, std::move(cb), drogon::k400BadRequest, "APP-VAL-001",
+                      "validation", *parse_error, false, details);
+          return;
+        }
+
+        std::string error_code;
+        std::string error_message;
+        const auto model =
+            runtime_state.register_model(parsed, error_code, error_message);
+        if (!model.has_value()) {
+          write_error(req, std::move(cb), drogon::k400BadRequest, error_code,
+                      "validation", error_message, false);
+          return;
+        }
+
+        Json::Value body(Json::objectValue);
+        body["model"] = model_to_json(*model);
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        write_json(req, resp, body, drogon::k201Created);
+        cb(resp);
+      },
+      {drogon::Post});
+
+  drogon::app().registerHandler(
+      "/api/models/select",
+      [](const drogon::HttpRequestPtr &req,
+         std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
+        std::string model_id;
+        Json::Value details(Json::objectValue);
+        if (const auto parse_error =
+                parse_model_select_request(req->getJsonObject(), model_id, details);
+            parse_error.has_value()) {
+          write_error(req, std::move(cb), drogon::k400BadRequest, "APP-VAL-001",
+                      "validation", *parse_error, false, details);
+          return;
+        }
+
+        std::string error_code;
+        std::string error_message;
+        const auto model = runtime_state.select_model(model_id, error_code, error_message);
+        if (!model.has_value()) {
+          auto status = drogon::k409Conflict;
+          auto category = std::string("conflict");
+          if (error_code == "APP-MOD-404") {
+            status = drogon::k404NotFound;
+            category = "not_found";
+          } else if (error_code == "APP-VAL-001") {
+            status = drogon::k400BadRequest;
+            category = "validation";
+          }
+          write_error(req, std::move(cb), status, error_code, category, error_message,
+                      true);
+          return;
+        }
+
+        Json::Value body(Json::objectValue);
+        body["active_model"] = model_to_json(*model);
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        write_json(req, resp, body);
+        cb(resp);
+      },
+      {drogon::Post});
+
+  drogon::app().registerHandler(
+      "/api/chat/complete",
+      [](const drogon::HttpRequestPtr &req,
+         std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
+        std::string message;
+        Json::Value details(Json::objectValue);
+        if (const auto parse_error =
+                parse_chat_complete_request(req->getJsonObject(), message, details);
+            parse_error.has_value()) {
+          write_error(req, std::move(cb), drogon::k400BadRequest, "APP-VAL-001",
+                      "validation", *parse_error, false, details);
+          return;
+        }
+
+        std::string error_code;
+        std::string error_message;
+        const auto response =
+            runtime_state.chat_complete(message, error_code, error_message);
+        if (!response.has_value()) {
+          const auto status = error_code == "APP-STATE-409" ? drogon::k409Conflict
+                                                            : drogon::k502BadGateway;
+          write_error(req, std::move(cb), status, error_code,
+                      status == drogon::k409Conflict ? "conflict" : "upstream",
+                      error_message, true);
+          return;
+        }
+
+        Json::Value usage(Json::objectValue);
+        usage["prompt_tokens"] = response->usage.prompt_tokens;
+        usage["completion_tokens"] = response->usage.completion_tokens;
+        usage["total_tokens"] = response->usage.total_tokens;
+
+        Json::Value metrics(Json::objectValue);
+        metrics["latency_ms"] =
+            static_cast<Json::Int64>(response->metrics.latency_ms.count());
+        metrics["time_to_first_token_ms"] =
+            static_cast<Json::Int64>(response->metrics.time_to_first_token_ms.count());
+        metrics["tokens_per_second"] = response->metrics.tokens_per_second;
+
+        Json::Value body(Json::objectValue);
+        body["text"] = response->text;
+        body["usage"] = usage;
+        body["metrics"] = metrics;
+
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        write_json(req, resp, body);
+        cb(resp);
+      },
+      {drogon::Post});
+
+  drogon::app().registerHandler(
+      "/api/chat/reset",
+      [](const drogon::HttpRequestPtr &req,
+         std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
+        std::string error_code;
+        std::string error_message;
+        const auto model_id = runtime_state.reset_chat(error_code, error_message);
+        if (!model_id.has_value()) {
+          write_error(req, std::move(cb), drogon::k409Conflict, error_code, "conflict",
+                      error_message, false);
+          return;
+        }
+
+        Json::Value body(Json::objectValue);
+        body["status"] = "cleared";
+        body["model_id"] = *model_id;
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        write_json(req, resp, body);
+        cb(resp);
+      },
+      {drogon::Post});
 
   drogon::app().registerHandler(
       "/api/mcp/catalog",
@@ -848,14 +1280,30 @@ int main() {
 
   drogon::app().registerHandler(
       "/{path:.*}",
-      [index_html](const drogon::HttpRequestPtr &req,
-                   std::function<void(const drogon::HttpResponsePtr &)> &&cb,
-                   const std::string &path) {
+      [web_root, index_html](const drogon::HttpRequestPtr &req,
+                             std::function<void(const drogon::HttpResponsePtr &)> &&cb,
+                             const std::string &path) {
         if (starts_with(path, "api/") || path == "api") {
           write_error(req, std::move(cb), drogon::k404NotFound, "APP-NOT-IMPL-001",
                       "internal",
                       "API endpoint not implemented in current application phase",
                       false);
+          return;
+        }
+
+        const fs::path requested_file = web_root / fs::path(path);
+        if (!path.empty() && fs::exists(requested_file) &&
+            fs::is_regular_file(requested_file)) {
+          auto resp = drogon::HttpResponse::newFileResponse(requested_file.string());
+          resp->addHeader("Cache-Control", "no-store");
+          resp->addHeader("X-Correlation-Id", resolve_correlation_id(req));
+          cb(resp);
+          return;
+        }
+
+        if (!path.empty() && path.find('.') != std::string::npos) {
+          write_error(req, std::move(cb), drogon::k404NotFound, "APP-ASSET-404",
+                      "not_found", "Static asset not found", false);
           return;
         }
 

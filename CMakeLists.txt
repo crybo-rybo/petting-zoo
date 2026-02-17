@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(PETTING_ZOO_BUILD_WEB "Build web assets with npm when available" ON)
 option(PETTING_ZOO_ENABLE_MCP "Enable MCP support via zoo-keeper" ON)
+option(PETTING_ZOO_BUILD_TESTS "Build and register project tests" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(FetchDependencies)
@@ -22,3 +23,9 @@ add_subdirectory(zoo-keeper EXCLUDE_FROM_ALL)
 
 add_subdirectory(apps/web)
 add_subdirectory(apps/server)
+
+if(PETTING_ZOO_BUILD_TESTS)
+  set(BUILD_TESTING ON CACHE BOOL "Enable CTest tests" FORCE)
+  include(CTest)
+  add_subdirectory(tests)
+endif()

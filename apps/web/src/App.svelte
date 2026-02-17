@@ -1,9 +1,19 @@
 <script lang="ts">
+  import { parseArgs } from './lib/args';
+
   type Health = {
     status: string;
     service: string;
     version: string;
     timestamp: string;
+  };
+
+  type ModelSummary = {
+    id: string;
+    display_name: string;
+    path: string;
+    status: 'available' | 'loading' | 'unavailable';
+    context_size?: number;
   };
 
   type Connector = {
@@ -44,6 +54,16 @@
 
   let health: Health | null = null;
   let healthError = '';
+  let models: ModelSummary[] = [];
+  let activeModelId: string | null = null;
+  let modelPath = '';
+  let modelDisplayName = '';
+  let selectedModelToLoad = '';
+  let chatInput = '';
+  let chatOutput = '';
+  let chatError = '';
+  let chatUsage = '';
+  let chatMetrics = '';
 
   let templates: CatalogTemplate[] = [];
   let connectors: Connector[] = [];
@@ -63,13 +83,6 @@
   let validationChecks: ValidationCheck[] = [];
   let validationWarnings: string[] = [];
   let validationValid: boolean | null = null;
-
-  function parseArgs(raw: string): string[] {
-    return raw
-      .split('\n')
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0);
-  }
 
   function buildPayload() {
     return {
@@ -114,6 +127,17 @@
     templates = body.templates ?? [];
   }
 
+  async function loadModels() {
+    const body = await requestJson<{ models: ModelSummary[]; active_model_id: string | null }>(
+      '/api/models'
+    );
+    models = body.models ?? [];
+    activeModelId = body.active_model_id ?? null;
+    if (!selectedModelToLoad && activeModelId) {
+      selectedModelToLoad = activeModelId;
+    }
+  }
+
   async function loadConnectors() {
     const body = await requestJson<{ connectors: Connector[] }>('/api/mcp/connectors');
     connectors = body.connectors ?? [];
@@ -123,9 +147,101 @@
     apiError = '';
     busy = true;
     try {
-      await Promise.all([loadHealth(), loadCatalog(), loadConnectors()]);
+      await Promise.all([loadHealth(), loadModels(), loadCatalog(), loadConnectors()]);
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function registerModel() {
+    apiError = '';
+    chatError = '';
+    busy = true;
+    try {
+      await requestJson<{ model: ModelSummary }>('/api/models/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: modelPath.trim(),
+          display_name: modelDisplayName.trim() || undefined
+        })
+      });
+      modelPath = '';
+      modelDisplayName = '';
+      await loadModels();
+    } catch (e) {
+      apiError = e instanceof Error ? e.message : 'unknown error';
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function selectModel() {
+    if (!selectedModelToLoad) {
+      return;
+    }
+    apiError = '';
+    chatError = '';
+    busy = true;
+    try {
+      await requestJson<{ active_model: ModelSummary }>('/api/models/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_id: selectedModelToLoad })
+      });
+      await loadModels();
+    } catch (e) {
+      apiError = e instanceof Error ? e.message : 'unknown error';
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function sendChat() {
+    if (!chatInput.trim()) {
+      return;
+    }
+    apiError = '';
+    chatError = '';
+    busy = true;
+    try {
+      const body = await requestJson<{
+        text: string;
+        usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+        metrics: { latency_ms: number; time_to_first_token_ms: number; tokens_per_second: number };
+      }>('/api/chat/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: chatInput.trim() })
+      });
+      chatOutput = body.text ?? '';
+      chatUsage = `prompt=${body.usage.prompt_tokens}, completion=${body.usage.completion_tokens}, total=${body.usage.total_tokens}`;
+      chatMetrics = `latency=${body.metrics.latency_ms}ms, ttfb=${body.metrics.time_to_first_token_ms}ms, tps=${body.metrics.tokens_per_second.toFixed(2)}`;
+    } catch (e) {
+      chatOutput = '';
+      chatUsage = '';
+      chatMetrics = '';
+      chatError = e instanceof Error ? e.message : 'unknown error';
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function resetChat() {
+    apiError = '';
+    chatError = '';
+    busy = true;
+    try {
+      await requestJson<{ status: string; model_id: string }>('/api/chat/reset', {
+        method: 'POST'
+      });
+      chatOutput = '';
+      chatUsage = '';
+      chatMetrics = '';
+    } catch (e) {
+      chatError = e instanceof Error ? e.message : 'unknown error';
     } finally {
       busy = false;
     }
@@ -270,6 +386,79 @@
       <p class="error">Failed to load health: {healthError}</p>
     {:else}
       <p>Loading...</p>
+    {/if}
+  </section>
+
+  <section class="card">
+    <h2>Model Runtime</h2>
+    <p class="lead-in-card">Register a GGUF file path from this server, load it, and chat.</p>
+    <div class="grid">
+      <label class="span-2">
+        Model Path (server filesystem)
+        <input bind:value={modelPath} placeholder="/absolute/path/to/model.gguf" />
+      </label>
+      <label class="span-2">
+        Display Name (optional)
+        <input bind:value={modelDisplayName} placeholder="Llama 3 8B Q4" />
+      </label>
+    </div>
+    <div class="row-actions">
+      <button on:click={registerModel} disabled={busy || !modelPath.trim()}>Register Model</button>
+      <button class="ghost" on:click={loadModels} disabled={busy}>Refresh Models</button>
+    </div>
+
+    {#if models.length > 0}
+      <div class="grid">
+        <label class="span-2">
+          Registered Models
+          <select bind:value={selectedModelToLoad}>
+            <option value="">Select model...</option>
+            {#each models as model}
+              <option value={model.id}>
+                {model.display_name} ({model.status}) {model.id === activeModelId ? ' [active]' : ''}
+              </option>
+            {/each}
+          </select>
+        </label>
+      </div>
+      <div class="row-actions">
+        <button on:click={selectModel} disabled={busy || !selectedModelToLoad}>Load Selected Model</button>
+      </div>
+      <ul>
+        {#each models as model}
+          <li>
+            <span class="mono">{model.id}</span> - {model.display_name} - {model.status}
+            <br />
+            <span class="mono">{model.path}</span>
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p>No registered models yet.</p>
+    {/if}
+  </section>
+
+  <section class="card">
+    <h2>Chat</h2>
+    <p class="lead-in-card">
+      Active model: <span class="mono">{activeModelId ?? 'none loaded'}</span>
+    </p>
+    <label>
+      Prompt
+      <textarea bind:value={chatInput} rows="5" placeholder="Ask something..."></textarea>
+    </label>
+    <div class="row-actions">
+      <button on:click={sendChat} disabled={busy || !chatInput.trim() || !activeModelId}>Send</button>
+      <button class="ghost" on:click={resetChat} disabled={busy || !activeModelId}>Reset Chat History</button>
+    </div>
+    {#if chatError}
+      <p class="error">Chat error: {chatError}</p>
+    {/if}
+    {#if chatOutput}
+      <h3>Response</h3>
+      <pre>{chatOutput}</pre>
+      <p class="mono">Usage: {chatUsage}</p>
+      <p class="mono">Metrics: {chatMetrics}</p>
     {/if}
   </section>
 
@@ -457,6 +646,11 @@
     padding: 1rem 1.2rem;
   }
 
+  .lead-in-card {
+    color: var(--muted);
+    margin-top: 0;
+  }
+
   h2,
   h3 {
     margin-top: 0;
@@ -508,6 +702,15 @@
     border: 1px solid #cbd5e1;
     border-radius: 10px;
     padding: 0.5rem 0.6rem;
+  }
+
+  pre {
+    background: #111827;
+    color: #f9fafb;
+    border-radius: 10px;
+    padding: 0.8rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
   }
 
   .connector-list {

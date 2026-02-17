@@ -3,6 +3,11 @@
 ## Objective
 Build a local-first application around the `zoo-keeper` C++ library with an API server, browser UI, and operational tooling that can be shipped incrementally.
 
+## Current Progress
+- Phase 0 completed: API contracts, websocket schema, error model, and config template are in place.
+- Phase 1 completed: runnable Drogon + Svelte skeleton with static asset serving and health endpoint.
+- `zoo-keeper` submodule is updated to MCP-capable commit `6b84f35`.
+
 ## Scope and Guardrails
 - Keep inference and orchestration logic in `zoo-keeper` (no logic fork in app layer).
 - Build a clean app boundary: web app talks only to backend API.
@@ -135,15 +140,57 @@ Work items:
 - Ship `stdio` connector lifecycle manager first.
 - Add capability negotiation and health checks.
 - Map MCP tools/resources into runtime tool-calling flow.
-- Frontend: connector management screen.
+- Frontend: connector management screen with guided setup flow.
+- Add connector state machine:
+  - `draft` -> `validated` -> `connected` -> `degraded` -> `disconnected`
+- Add runtime actions:
+  - validate config
+  - connect/disconnect
+  - refresh discovered tools
+  - test-call selected tool
+- Add connector template catalog (filesystem/git/github/postgres/etc.) with prefilled command/args/env shape.
 
 Deliverables:
-- `/api/mcp/connectors` CRUD and health state.
+- `/api/mcp/connectors` CRUD + lifecycle actions + tool inventory.
 - Working stdio connector invocation path.
+- UI wizard that can onboard a connector in <2 minutes for a first-time user.
 
 Exit criteria:
 - At least one MCP server can be registered and used in a chat run.
 - Failure states are visible via API and UI.
+- User can add connector via template or manual mode without editing config files by hand.
+
+## MCP UX Plan (Detailed)
+Goal: make MCP integration feel like "add integration" rather than "configure raw process internals."
+
+### UX model
+1. Connector list page:
+   - status badge, last check, tool count, quick connect/disconnect.
+2. "Add Connector" modal:
+   - `Template` mode (recommended): choose server type from catalog.
+   - `Custom` mode: raw command/args/env/working-dir.
+3. Preflight validation:
+   - validate executable exists, required args are present, protocol handshake succeeds.
+4. Confirm + save:
+   - persist connector profile (SQLite), mark as `validated`.
+5. Connect:
+   - establish MCP session, discover tools, register into runtime.
+6. Inspect:
+   - show discovered tools + schemas, optional test-call panel.
+
+### Recommended API additions (incremental)
+1. `GET /api/mcp/catalog`: known connector templates + form metadata.
+2. `POST /api/mcp/connectors/validate`: non-persistent validation/preflight.
+3. `POST /api/mcp/connectors/:id/connect`: establish session and register tools.
+4. `POST /api/mcp/connectors/:id/disconnect`: terminate session.
+5. `POST /api/mcp/connectors/:id/refresh-tools`: re-run `tools/list`.
+6. `GET /api/mcp/connectors/:id/tools`: discovered tool metadata.
+
+### Why this is better than plain CRUD
+- Reduces user errors (command/arg mistakes caught before save).
+- Allows safe progressive onboarding (draft -> validate -> connect).
+- Keeps app resilient with explicit connector lifecycle and health.
+- Supports both novice users (template path) and advanced users (custom path).
 
 ### Phase 6: Hardening and Ops (Week 4)
 Purpose: Production-grade local app behavior.
@@ -186,8 +233,10 @@ Exit criteria:
 4. Chat send + websocket stream render.
 5. KB upload + retrieval citations in response.
 6. Prompt preset edit/apply per session.
-7. MCP stdio connector add/test/use.
-8. Logs, limits, export/import, packaging.
+7. MCP template catalog + validate endpoint.
+8. MCP connector connect/disconnect + tool inventory UI.
+9. MCP connector test-call + health/recovery UX.
+10. Logs, limits, export/import, packaging.
 
 ## Testing Strategy
 - Unit tests:
@@ -222,6 +271,6 @@ Exit criteria:
   - Mitigation: Chunking/embedding benchmarks and observable provenance.
 
 ## Immediate Next Actions
-1. Create `docs/api/openapi.yaml` and websocket event schema.
-2. Scaffold `apps/server` and `apps/web` with build integration.
-3. Implement Phase 2 vertical slice (model/session/chat) behind stable API contracts.
+1. Implement Phase 2 vertical slice (model/session/chat) on current server/web skeleton.
+2. Add MCP catalog + connector lifecycle endpoints to OpenAPI before Phase 5 implementation.
+3. Implement MCP connector wizard UI (template + custom) once lifecycle endpoints land.

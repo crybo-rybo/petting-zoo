@@ -420,6 +420,54 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
+  /api/mcp/catalog:
+    get:
+      tags: [MCP]
+      summary: List built-in MCP connector templates for guided setup
+      operationId: listMcpCatalog
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+      responses:
+        '200':
+          description: MCP connector template catalog
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [templates]
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/McpConnectorTemplate'
+  /api/mcp/connectors/validate:
+    post:
+      tags: [MCP]
+      summary: Validate connector settings without persisting
+      operationId: validateConnector
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateConnectorRequest'
+      responses:
+        '200':
+          description: Validation result
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateConnectorResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /api/mcp/connectors/{connectorId}:
     delete:
       tags: [MCP]
@@ -438,6 +486,124 @@ paths:
           headers:
             X-Correlation-Id:
               $ref: '#/components/headers/XCorrelationId'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/mcp/connectors/{connectorId}/connect:
+    post:
+      tags: [MCP]
+      summary: Connect a configured connector and discover tools
+      operationId: connectConnector
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - in: path
+          name: connectorId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Connector connected
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [connector]
+                properties:
+                  connector:
+                    $ref: '#/components/schemas/McpConnector'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/mcp/connectors/{connectorId}/disconnect:
+    post:
+      tags: [MCP]
+      summary: Disconnect a connector while keeping its configuration
+      operationId: disconnectConnector
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - in: path
+          name: connectorId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Connector disconnected
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [connector]
+                properties:
+                  connector:
+                    $ref: '#/components/schemas/McpConnector'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/mcp/connectors/{connectorId}/refresh-tools:
+    post:
+      tags: [MCP]
+      summary: Refresh discovered tools from an active connector
+      operationId: refreshConnectorTools
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - in: path
+          name: connectorId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Connector tool inventory refreshed
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tools]
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/McpToolSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/mcp/connectors/{connectorId}/tools:
+    get:
+      tags: [MCP]
+      summary: List tools discovered for a connector
+      operationId: listConnectorTools
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - in: path
+          name: connectorId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Connector tool inventory
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tools]
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/McpToolSummary'
         '404':
           $ref: '#/components/responses/NotFound'
 components:
@@ -708,3 +874,74 @@ components:
             type: string
         endpoint:
           type: string
+    ValidateConnectorRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateConnectorRequest'
+      type: object
+      properties:
+        dry_run:
+          type: boolean
+          default: true
+    ValidateConnectorResponse:
+      type: object
+      required: [valid, checks]
+      properties:
+        valid:
+          type: boolean
+        checks:
+          type: array
+          items:
+            type: object
+            required: [name, ok]
+            properties:
+              name:
+                type: string
+              ok:
+                type: boolean
+              message:
+                type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    McpConnectorTemplate:
+      type: object
+      required: [id, name, transport, defaults]
+      properties:
+        id:
+          type: string
+          example: filesystem
+        name:
+          type: string
+          example: Filesystem
+        description:
+          type: string
+        transport:
+          type: string
+          enum: [stdio, http_stream]
+        defaults:
+          type: object
+          properties:
+            command:
+              type: string
+            args:
+              type: array
+              items:
+                type: string
+            endpoint:
+              type: string
+        required_fields:
+          type: array
+          items:
+            type: string
+    McpToolSummary:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        input_schema:
+          type: object
+          additionalProperties: true

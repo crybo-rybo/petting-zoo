@@ -14,7 +14,7 @@ if(NOT Drogon_FOUND)
   FetchContent_Declare(
     drogon
     GIT_REPOSITORY https://github.com/drogonframework/drogon.git
-    GIT_TAG v1.9.8
+    GIT_TAG v1.9.12
   )
   FetchContent_MakeAvailable(drogon)
 endif()

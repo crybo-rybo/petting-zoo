@@ -6,6 +6,7 @@ Build a local-first application around the `zoo-keeper` C++ library with an API 
 ## Current Progress
 - Phase 0 completed: API contracts, websocket schema, error model, and config template are in place.
 - Phase 1 completed: runnable Drogon + Svelte skeleton with static asset serving and health endpoint.
+- MCP connector management slice implemented (catalog, validation, connector lifecycle endpoints, and frontend management UI).
 - `zoo-keeper` submodule is updated to MCP-capable commit `6b84f35`.
 
 ## Scope and Guardrails
@@ -272,5 +273,5 @@ Exit criteria:
 
 ## Immediate Next Actions
 1. Implement Phase 2 vertical slice (model/session/chat) on current server/web skeleton.
-2. Add MCP catalog + connector lifecycle endpoints to OpenAPI before Phase 5 implementation.
-3. Implement MCP connector wizard UI (template + custom) once lifecycle endpoints land.
+2. Integrate connected MCP tools into active chat runtime requests (session/chat flow).
+3. Persist connector registry and state in SQLite (replace in-memory MCP registry).

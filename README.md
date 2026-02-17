@@ -9,10 +9,19 @@ Petting Zoo is an application layer for the [`zoo-keeper`](https://github.com/cr
 - MCP connector support for external tools/resources
 
 ## Status
-Phase 1 skeleton is implemented:
+Implemented through an MCP management slice:
 - `apps/server`: Drogon host with `/healthz` and SPA/static serving
 - `apps/web`: Svelte + TypeScript + Vite frontend scaffold
 - CMake build integration to produce and serve web assets
+- MCP connector API endpoints:
+  - `GET /api/mcp/catalog`
+  - `GET/POST /api/mcp/connectors`
+  - `POST /api/mcp/connectors/validate`
+  - `POST /api/mcp/connectors/{id}/connect`
+  - `POST /api/mcp/connectors/{id}/disconnect`
+  - `POST /api/mcp/connectors/{id}/refresh-tools`
+  - `GET /api/mcp/connectors/{id}/tools`
+- MCP connector management UI (template/custom create, validate, connect/disconnect, tool list)
 
 See `APPLICATION_PLAN.md` for the full phased roadmap.
 

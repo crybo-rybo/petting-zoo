@@ -8,6 +8,8 @@ else()
   target_link_libraries(petting_zoo_server PRIVATE Drogon::Drogon)
 endif()
 
+target_link_libraries(petting_zoo_server PRIVATE zoo)
+
 target_compile_features(petting_zoo_server PRIVATE cxx_std_20)
 
 target_compile_definitions(petting_zoo_server PRIVATE

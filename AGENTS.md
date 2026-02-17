@@ -25,6 +25,7 @@ Guidance for contributors and coding agents working in this repository.
   - Open a GitHub issue in `crybo-rybo/zoo-keeper` with reproduction context.
   - Include affected files/symbols, expected behavior, and proposed direction.
   - Reference the issue in the local change/commit notes.
+  - Continue filing follow-up issues for newly discovered upstream MCP regressions during implementation/testing.
 
 ## Quality Bar
 - Every feature change should include:

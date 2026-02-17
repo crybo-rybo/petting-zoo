@@ -9,7 +9,17 @@ Petting Zoo is an application layer for the [`zoo-keeper`](https://github.com/cr
 - MCP connector support for external tools/resources
 
 ## Status
-Planning and scaffolding stage. See `APPLICATION_PLAN.md` for phased implementation details.
+Phase 0 (contracts and foundations) is implemented. See `APPLICATION_PLAN.md` for the full phased roadmap.
+
+## Phase 0 Artifacts
+- REST API contract: `docs/api/openapi.yaml`
+- WebSocket stream contract: `docs/api/ws-events.md`
+- Error envelope and taxonomy: `docs/api/errors.md`
+- Runtime config template: `config/app.example.yaml`
+
+## Submodule Setup
+- Initialize dependencies after clone:
+  - `git submodule update --init --recursive`
 
 ## Goals
 - Keep core inference logic in `zoo-keeper`

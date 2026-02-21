@@ -7,6 +7,9 @@ if(NOT Drogon_FOUND)
   set(BUILD_CTL OFF CACHE BOOL "" FORCE)
   set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
   set(BUILD_ORM OFF CACHE BOOL "" FORCE)
+  # Avoid yaml-cpp header discovery issues with some package variants
+  # (e.g. conda/miniforge yaml-cpp config exposes libs but not include dirs).
+  set(BUILD_YAML_CONFIG OFF CACHE BOOL "" FORCE)
   set(BUILD_REDIS OFF CACHE BOOL "" FORCE)
   set(BUILD_MYSQL OFF CACHE BOOL "" FORCE)
   set(BUILD_POSTGRESQL OFF CACHE BOOL "" FORCE)

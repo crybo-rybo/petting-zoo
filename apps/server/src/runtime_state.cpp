@@ -16,16 +16,12 @@ std::string sanitize_model_id(std::string input) {
     }
   }
 
-  while (!input.empty() && input.front() == '-') {
-    input.erase(input.begin());
-  }
-  while (!input.empty() && input.back() == '-') {
-    input.pop_back();
-  }
-  if (input.empty()) {
+  const auto first = input.find_first_not_of('-');
+  if (first == std::string::npos) {
     return "model";
   }
-  return input;
+  const auto last = input.find_last_not_of('-');
+  return input.substr(first, last - first + 1);
 }
 
 std::vector<ModelEntry> RuntimeState::list_models() const {
@@ -139,7 +135,35 @@ std::optional<zoo::Response> RuntimeState::chat_complete(const std::string &mess
     return std::nullopt;
   }
 
+  std::lock_guard<std::mutex> agent_lock(agent_mu_);
   auto handle = agent->chat(zoo::Message::user(message));
+  auto result = handle.future.get();
+  if (!result) {
+    error_code = "APP-UPSTREAM-001";
+    error_message = result.error().to_string();
+    return std::nullopt;
+  }
+  return *result;
+}
+
+std::optional<zoo::Response> RuntimeState::chat_stream(
+    const std::string &message,
+    std::function<void(std::string_view)> token_callback,
+    std::string &error_code,
+    std::string &error_message) {
+  std::shared_ptr<zoo::Agent> agent;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    agent = agent_;
+  }
+  if (!agent) {
+    error_code = "APP-STATE-409";
+    error_message = "No active model is loaded";
+    return std::nullopt;
+  }
+
+  std::lock_guard<std::mutex> agent_lock(agent_mu_);
+  auto handle = agent->chat(zoo::Message::user(message), std::move(token_callback));
   auto result = handle.future.get();
   if (!result) {
     error_code = "APP-UPSTREAM-001";
@@ -164,6 +188,7 @@ std::optional<std::string> RuntimeState::reset_chat(std::string &error_code,
     return std::nullopt;
   }
 
+  std::lock_guard<std::mutex> agent_lock(agent_mu_);
   agent->clear_history();
   return model_id;
 }

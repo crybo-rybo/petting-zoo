@@ -30,6 +30,7 @@
   let chatError = '';
   let chatUsage = '';
   let chatMetrics = '';
+  let chatStreaming = false;
 
   let apiError = '';
   let busy = false;
@@ -135,28 +136,69 @@
 
     apiError = '';
     chatError = '';
+    chatOutput = '';
+    chatUsage = '';
+    chatMetrics = '';
     busy = true;
+    chatStreaming = true;
+
     try {
-      const body = await requestJson<{
-        text: string;
-        usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
-        metrics: { latency_ms: number; time_to_first_token_ms: number; tokens_per_second: number };
-      }>('/api/chat/complete', {
+      const resp = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: chatInput.trim() })
       });
 
-      chatOutput = body.text ?? '';
-      chatUsage = usageSummary(body.usage);
-      chatMetrics = metricsSummary(body.metrics);
+      if (!resp.ok) {
+        let message = `status ${resp.status}`;
+        try {
+          const body = await resp.json();
+          if (body?.error?.message) message = body.error.message;
+        } catch { /* ignore */ }
+        throw new Error(message);
+      }
+
+      if (!resp.body) throw new Error('No response body from stream endpoint');
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue;
+          const event = JSON.parse(part.slice(6)) as {
+            type: string;
+            content?: string;
+            text?: string;
+            usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+            metrics?: { latency_ms: number; time_to_first_token_ms: number; tokens_per_second: number };
+            code?: string;
+            message?: string;
+          };
+
+          if (event.type === 'token' && event.content !== undefined) {
+            chatOutput += event.content;
+          } else if (event.type === 'done') {
+            if (event.usage) chatUsage = usageSummary(event.usage);
+            if (event.metrics) chatMetrics = metricsSummary(event.metrics);
+          } else if (event.type === 'error') {
+            chatError = event.message ?? event.code ?? 'unknown stream error';
+          }
+        }
+      }
     } catch (e) {
-      chatOutput = '';
-      chatUsage = '';
-      chatMetrics = '';
       chatError = e instanceof Error ? e.message : 'unknown error';
     } finally {
       busy = false;
+      chatStreaming = false;
     }
   }
 
@@ -179,6 +221,11 @@
   }
 
   initialize();
+
+  // Poll for model state changes every 5 s (silently, only when not busy).
+  setInterval(() => {
+    if (!busy) loadModels().catch(() => {});
+  }, 5000);
 </script>
 
 <main class="shell">
@@ -267,17 +314,19 @@
       <textarea bind:value={chatInput} rows="5" placeholder="Ask something..."></textarea>
     </label>
     <div class="row-actions">
-      <button on:click={sendChat} disabled={busy || !chatInput.trim() || !activeModelId}>Send</button>
+      <button on:click={sendChat} disabled={busy || !chatInput.trim() || !activeModelId}>
+        {chatStreaming ? 'Streaming…' : 'Send'}
+      </button>
       <button class="ghost" on:click={resetChat} disabled={busy || !activeModelId}>Reset Chat History</button>
     </div>
     {#if chatError}
       <p class="error">Chat error: {chatError}</p>
     {/if}
-    {#if chatOutput}
-      <h3>Response</h3>
-      <pre>{chatOutput}</pre>
-      <p class="mono">Usage: {chatUsage}</p>
-      <p class="mono">Metrics: {chatMetrics}</p>
+    {#if chatOutput || chatStreaming}
+      <h3>Response {#if chatStreaming}<span class="streaming-indicator">●</span>{/if}</h3>
+      <pre>{chatOutput}{#if chatStreaming}<span class="cursor">▌</span>{/if}</pre>
+      {#if chatUsage}<p class="mono">Usage: {chatUsage}</p>{/if}
+      {#if chatMetrics}<p class="mono">Metrics: {chatMetrics}</p>{/if}
     {/if}
   </section>
 
@@ -446,6 +495,26 @@
 
   .error {
     color: var(--danger);
+  }
+
+  .streaming-indicator {
+    color: var(--accent);
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  .cursor {
+    animation: blink 0.7s step-end infinite;
+    color: var(--accent);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
   }
 
   @media (max-width: 760px) {

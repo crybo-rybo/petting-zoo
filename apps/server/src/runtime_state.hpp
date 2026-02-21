@@ -42,8 +42,14 @@ class RuntimeState {
   std::optional<std::string> reset_chat(std::string &error_code,
                                         std::string &error_message);
 
+  std::optional<zoo::Response> chat_stream(const std::string &message,
+                                           std::function<void(std::string_view)> token_callback,
+                                           std::string &error_code,
+                                           std::string &error_message);
+
  private:
   mutable std::mutex mu_;
+  mutable std::mutex agent_mu_;  // Serializes agent operations (chat, reset)
   std::unordered_map<std::string, ModelEntry> models_;
   std::optional<std::string> active_model_id_;
   std::shared_ptr<zoo::Agent> agent_;

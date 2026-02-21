@@ -1,50 +1,32 @@
 # Petting Zoo
 
-Petting Zoo is an application layer for the [`zoo-keeper`](https://github.com/crybo-rybo/zoo-keeper.git) C++ library. It provides a local app experience with:
+Petting Zoo is an application layer for the [`zoo-keeper`](https://github.com/crybo-rybo/zoo-keeper.git) C++ library.
 
-- A Drogon-based C++ API server
-- A Svelte + TypeScript web UI
-- Streaming chat over WebSocket
-- Session, model, prompt, memory, and knowledge-base management
-- MCP connector support for external tools/resources
+The repository is intentionally reset to an MVP scope:
 
-## Status
-Implemented through an MCP management + minimal runtime interaction slice:
-- `apps/server`: Drogon host with `/healthz` and SPA/static serving
-- `apps/web`: Svelte + TypeScript + Vite frontend scaffold
-- CMake build integration to produce and serve web assets
-- MCP connector API endpoints:
-  - `GET /api/mcp/catalog`
-  - `GET/POST /api/mcp/connectors`
-  - `POST /api/mcp/connectors/validate`
-  - `POST /api/mcp/connectors/{id}/connect`
-  - `POST /api/mcp/connectors/{id}/disconnect`
-  - `POST /api/mcp/connectors/{id}/refresh-tools`
-  - `GET /api/mcp/connectors/{id}/tools`
-- MCP connector management UI (template/custom create, validate, connect/disconnect, tool list)
-- Model runtime endpoints:
-  - `GET /api/models`
-  - `POST /api/models/register`
-  - `POST /api/models/select`
-  - `POST /api/chat/complete`
-  - `POST /api/chat/reset`
-- Web UI sections for:
-  - model registration/loading from server filesystem
-  - prompt/response interaction with active loaded model
+- Drogon-based C++ API server
+- Svelte + TypeScript web UI
+- Local model registration/loading from server filesystem
+- Synchronous chat with the active loaded model
 
-See `APPLICATION_PLAN.md` for the full phased roadmap.
+## MVP Status
 
-## Phase 0 Artifacts
-- REST API contract: `docs/api/openapi.yaml`
-- WebSocket stream contract: `docs/api/ws-events.md`
-- Error envelope and taxonomy: `docs/api/errors.md`
-- Runtime config template: `config/app.example.yaml`
+Implemented and supported API endpoints:
 
-## Submodule Setup
-- Initialize dependencies after clone:
-  - `git submodule update --init --recursive`
+- `GET /healthz`
+- `GET /api/models`
+- `POST /api/models/register`
+- `POST /api/models/select`
+- `POST /api/chat/complete`
+- `POST /api/chat/reset`
+
+Deferred contracts are preserved for future reintroduction:
+
+- `docs/api/openapi.future.yaml` (sessions, streaming, KB, prompts, MCP)
+- `docs/api/ws-events.md` (marked deferred)
 
 ## Quickstart
+
 1. Configure and build:
    - `cmake -S . -B build`
    - `cmake --build build -j`
@@ -54,10 +36,12 @@ See `APPLICATION_PLAN.md` for the full phased roadmap.
    - `http://127.0.0.1:8080`
 
 Notes:
+
 - By default, CMake attempts `npm ci && npm run build` in `apps/web` to produce assets.
 - If npm build fails, fallback static assets in `apps/web/fallback-dist/` are served.
 
 ## Testing
+
 Run all project tests (C++ + server smoke + frontend unit tests) through CTest:
 
 1. Configure with tests enabled:
@@ -67,43 +51,17 @@ Run all project tests (C++ + server smoke + frontend unit tests) through CTest:
 3. Run:
    - `ctest --test-dir build --output-on-failure`
 
-You can also use the unified target:
+Or use:
+
 - `cmake --build build --target check`
 
-CI runs this test flow automatically on every push and pull request via `.github/workflows/ci.yml`.
-
-## Goals
-- Keep core inference logic in `zoo-keeper`
-- Provide a clean API boundary between UI and runtime
-- Ship incrementally with testable milestones
-- Support local-first workflows and robust observability
-
-## Planned Stack
-- Backend: C++ + Drogon
-- Frontend: Svelte + TypeScript (Vite)
-- Persistence: SQLite + `zoo-keeper` context DB
-- Protocols: REST + WebSocket + MCP (JSON-RPC 2.0)
-
-## Planned Repository Structure
-- `apps/server/` API host
-- `apps/web/` UI app
-- `include/zoo_app/` app interfaces
-- `src/zoo_app/` app implementations
-- `config/` runtime config
-- `docs/api/` API and stream contracts
-
-## Primary Milestones
-1. Contracts and skeleton
-2. Core model/session/chat runtime
-3. Knowledge + memory workflows
-4. Prompt management
-5. MCP connectors
-6. Hardening and packaging
-
 ## Development Principles
-- API contract-first development (OpenAPI + stream schema)
-- Vertical slices over broad incomplete scaffolds
-- Strict definition of done: tests, telemetry, docs, and UX parity
+
+- Keep core inference/runtime behavior in `zoo-keeper`
+- Keep frontend-to-backend API boundary strict
+- Keep contracts, implementation, and tests in sync
+- Add functionality back in vertical slices after MVP is stable
 
 ## Related Project
+
 - `zoo-keeper`: https://github.com/crybo-rybo/zoo-keeper.git

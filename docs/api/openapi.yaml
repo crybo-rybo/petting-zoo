@@ -1,22 +1,18 @@
 openapi: 3.1.0
 info:
-  title: Petting Zoo API
-  version: 0.1.0
-  summary: Contract-first API for the Petting Zoo application server.
+  title: Petting Zoo API (MVP)
+  version: 0.2.0
+  summary: Minimal API for local model loading and chat.
   description: |
-    REST contract for model/session/chat/knowledge/prompt/MCP workflows.
-    WebSocket streaming events are specified in docs/api/ws-events.md.
+    MVP reset contract for the Petting Zoo application server.
+    Scope includes health, model registration/selection, and synchronous chat.
 servers:
   - url: http://localhost:8080
     description: Local development server
 tags:
   - name: Health
   - name: Models
-  - name: Sessions
   - name: Chat
-  - name: Knowledge Base
-  - name: Prompts
-  - name: MCP
 paths:
   /healthz:
     get:
@@ -43,14 +39,14 @@ paths:
                     example: petting-zoo-server
                   version:
                     type: string
-                    example: 0.1.0
+                    example: 0.2.0
                   timestamp:
                     type: string
                     format: date-time
   /api/models:
     get:
       tags: [Models]
-      summary: List locally discoverable model candidates
+      summary: List registered model candidates and currently active model
       operationId: listModels
       parameters:
         - $ref: '#/components/parameters/XCorrelationId'
@@ -105,7 +101,7 @@ paths:
   /api/models/select:
     post:
       tags: [Models]
-      summary: Set active model used for newly started requests
+      summary: Set active model used for chat requests
       operationId: selectModel
       parameters:
         - $ref: '#/components/parameters/XCorrelationId'
@@ -133,132 +129,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
-  /api/sessions:
-    get:
-      tags: [Sessions]
-      summary: List chat sessions
-      operationId: listSessions
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
-      responses:
-        '200':
-          description: Session list
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [sessions]
-                properties:
-                  sessions:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/SessionSummary'
-    post:
-      tags: [Sessions]
-      summary: Create a new chat session
-      operationId: createSession
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateSessionRequest'
-      responses:
-        '201':
-          description: Session created
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [session]
-                properties:
-                  session:
-                    $ref: '#/components/schemas/SessionSummary'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-  /api/sessions/{sessionId}:
-    delete:
-      tags: [Sessions]
-      summary: Delete a session and all stored messages
-      operationId: deleteSession
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - $ref: '#/components/parameters/SessionId'
-      responses:
-        '204':
-          description: Session deleted
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /api/chat/{sessionId}/send:
-    post:
-      tags: [Chat]
-      summary: Queue a user message for model generation
-      operationId: sendChatMessage
-      description: |
-        Submits the request and returns an accepted envelope.
-        Stream events are delivered on WS /api/chat/{sessionId}/stream.
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - $ref: '#/components/parameters/SessionId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChatSendRequest'
-      responses:
-        '202':
-          description: Chat request accepted
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChatAccepted'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-  /api/chat/{sessionId}/stream:
-    get:
-      tags: [Chat]
-      summary: WebSocket endpoint for chat streaming
-      operationId: chatStreamHandshake
-      description: |
-        Upgrade this route to WebSocket. Event schema is defined in docs/api/ws-events.md.
-        Query parameters:
-        - request_id: optional, subscribe to one in-flight request
-        - from_seq: optional, resume sequence from a known offset
-      parameters:
-        - $ref: '#/components/parameters/SessionId'
-      responses:
-        '426':
-          description: Upgrade Required for non-WebSocket requests
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
   /api/chat/complete:
     post:
       tags: [Chat]
@@ -307,382 +179,6 @@ paths:
                 $ref: '#/components/schemas/ChatResetResponse'
         '409':
           $ref: '#/components/responses/Conflict'
-  /api/kb/upload:
-    post:
-      tags: [Knowledge Base]
-      summary: Upload and index a document
-      operationId: uploadKnowledgeDocument
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              properties:
-                file:
-                  type: string
-                  format: binary
-                source:
-                  type: string
-                  description: Optional logical source identifier override
-      responses:
-        '201':
-          description: Document accepted for indexing
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [document]
-                properties:
-                  document:
-                    $ref: '#/components/schemas/KnowledgeDocument'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '413':
-          $ref: '#/components/responses/PayloadTooLarge'
-  /api/kb/docs:
-    get:
-      tags: [Knowledge Base]
-      summary: List indexed documents
-      operationId: listKnowledgeDocuments
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-      responses:
-        '200':
-          description: Indexed docs
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [documents]
-                properties:
-                  documents:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/KnowledgeDocument'
-  /api/kb/docs/{docId}:
-    delete:
-      tags: [Knowledge Base]
-      summary: Delete indexed document and chunks
-      operationId: deleteKnowledgeDocument
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - in: path
-          name: docId
-          required: true
-          schema:
-            type: string
-      responses:
-        '204':
-          description: Document deleted
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /api/prompts/{sessionId}:
-    get:
-      tags: [Prompts]
-      summary: Fetch active prompt configuration for a session
-      operationId: getSessionPrompt
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - $ref: '#/components/parameters/SessionId'
-      responses:
-        '200':
-          description: Prompt config
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [prompt]
-                properties:
-                  prompt:
-                    $ref: '#/components/schemas/SessionPrompt'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    put:
-      tags: [Prompts]
-      summary: Update prompt configuration for a session
-      operationId: updateSessionPrompt
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - $ref: '#/components/parameters/SessionId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdatePromptRequest'
-      responses:
-        '200':
-          description: Prompt updated
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [prompt]
-                properties:
-                  prompt:
-                    $ref: '#/components/schemas/SessionPrompt'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /api/mcp/connectors:
-    get:
-      tags: [MCP]
-      summary: List configured MCP connectors
-      operationId: listConnectors
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-      responses:
-        '200':
-          description: Connector list
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [connectors]
-                properties:
-                  connectors:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/McpConnector'
-    post:
-      tags: [MCP]
-      summary: Register a new MCP connector
-      operationId: createConnector
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateConnectorRequest'
-      responses:
-        '201':
-          description: Connector created
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [connector]
-                properties:
-                  connector:
-                    $ref: '#/components/schemas/McpConnector'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
-          $ref: '#/components/responses/Conflict'
-  /api/mcp/catalog:
-    get:
-      tags: [MCP]
-      summary: List built-in MCP connector templates for guided setup
-      operationId: listMcpCatalog
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-      responses:
-        '200':
-          description: MCP connector template catalog
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [templates]
-                properties:
-                  templates:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/McpConnectorTemplate'
-  /api/mcp/connectors/validate:
-    post:
-      tags: [MCP]
-      summary: Validate connector settings without persisting
-      operationId: validateConnector
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ValidateConnectorRequest'
-      responses:
-        '200':
-          description: Validation result
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ValidateConnectorResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-  /api/mcp/connectors/{connectorId}:
-    delete:
-      tags: [MCP]
-      summary: Remove connector registration
-      operationId: deleteConnector
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - in: path
-          name: connectorId
-          required: true
-          schema:
-            type: string
-      responses:
-        '204':
-          description: Connector deleted
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /api/mcp/connectors/{connectorId}/connect:
-    post:
-      tags: [MCP]
-      summary: Connect a configured connector and discover tools
-      operationId: connectConnector
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - in: path
-          name: connectorId
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Connector connected
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [connector]
-                properties:
-                  connector:
-                    $ref: '#/components/schemas/McpConnector'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-  /api/mcp/connectors/{connectorId}/disconnect:
-    post:
-      tags: [MCP]
-      summary: Disconnect a connector while keeping its configuration
-      operationId: disconnectConnector
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - in: path
-          name: connectorId
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Connector disconnected
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [connector]
-                properties:
-                  connector:
-                    $ref: '#/components/schemas/McpConnector'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /api/mcp/connectors/{connectorId}/refresh-tools:
-    post:
-      tags: [MCP]
-      summary: Refresh discovered tools from an active connector
-      operationId: refreshConnectorTools
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - in: path
-          name: connectorId
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Connector tool inventory refreshed
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [tools]
-                properties:
-                  tools:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/McpToolSummary'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /api/mcp/connectors/{connectorId}/tools:
-    get:
-      tags: [MCP]
-      summary: List tools discovered for a connector
-      operationId: listConnectorTools
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - in: path
-          name: connectorId
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Connector tool inventory
-          headers:
-            X-Correlation-Id:
-              $ref: '#/components/headers/XCorrelationId'
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [tools]
-                properties:
-                  tools:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/McpToolSummary'
-        '404':
-          $ref: '#/components/responses/NotFound'
 components:
   parameters:
     XCorrelationId:
@@ -691,40 +187,45 @@ components:
       required: false
       schema:
         type: string
-        maxLength: 128
-      description: Client-supplied correlation ID; server generates one when omitted.
-    SessionId:
-      in: path
-      name: sessionId
-      required: true
-      schema:
-        type: string
+      description: Optional request correlation ID. Generated by server when absent.
   headers:
     XCorrelationId:
-      description: Correlation ID bound to the request lifecycle.
+      description: Correlation ID for tracing request flow.
       schema:
         type: string
   responses:
     BadRequest:
-      description: Invalid request payload or parameters
+      description: Invalid request
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     NotFound:
-      description: Requested resource not found
+      description: Resource not found
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     Conflict:
-      description: Request conflicts with current state
+      description: State conflict
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
-    PayloadTooLarge:
-      description: Request payload exceeds configured limits
+    UpstreamError:
+      description: Upstream runtime error
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
       content:
         application/json:
           schema:
@@ -736,7 +237,7 @@ components:
       properties:
         error:
           type: object
-          required: [code, message, category, retryable, correlation_id]
+          required: [code, category, message, retryable, correlation_id]
           properties:
             code:
               type: string
@@ -755,106 +256,35 @@ components:
               additionalProperties: true
     ModelSummary:
       type: object
-      required: [id, display_name, path, status]
+      required: [id, display_name, path, status, context_size]
       properties:
         id:
           type: string
-          example: llama3-8b-instruct-q4
         display_name:
           type: string
-          example: Llama 3 8B Instruct Q4_K_M
         path:
           type: string
-          example: /models/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf
         status:
           type: string
           enum: [available, loading, unavailable]
         context_size:
           type: integer
           minimum: 1
-    ModelSelectRequest:
-      type: object
-      required: [model_id]
-      properties:
-        model_id:
-          type: string
     ModelRegisterRequest:
       type: object
       required: [path]
       properties:
         path:
           type: string
-          description: Absolute or server-relative path to a GGUF file on the server host.
+          description: Absolute path to GGUF model file on server host.
         display_name:
           type: string
-          description: Optional UI display name.
-    SessionSummary:
+    ModelSelectRequest:
       type: object
-      required: [id, title, created_at, updated_at]
+      required: [model_id]
       properties:
-        id:
-          type: string
-        title:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        last_message_preview:
-          type: string
-          nullable: true
-    CreateSessionRequest:
-      type: object
-      properties:
-        title:
-          type: string
-          maxLength: 160
         model_id:
           type: string
-        system_prompt:
-          type: string
-    ChatSendRequest:
-      type: object
-      required: [message]
-      properties:
-        message:
-          type: string
-          minLength: 1
-        request_id:
-          type: string
-          description: Optional caller-provided idempotency key.
-        options:
-          type: object
-          properties:
-            rag:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-                  default: false
-                top_k:
-                  type: integer
-                  minimum: 1
-                  maximum: 50
-                context_override:
-                  type: string
-            stream:
-              type: boolean
-              default: true
-    ChatAccepted:
-      type: object
-      required: [request_id, status, accepted_at]
-      properties:
-        request_id:
-          type: string
-        status:
-          type: string
-          const: queued
-        accepted_at:
-          type: string
-          format: date-time
     ChatCompleteRequest:
       type: object
       required: [message]
@@ -862,6 +292,32 @@ components:
         message:
           type: string
           minLength: 1
+    Usage:
+      type: object
+      required: [prompt_tokens, completion_tokens, total_tokens]
+      properties:
+        prompt_tokens:
+          type: integer
+          minimum: 0
+        completion_tokens:
+          type: integer
+          minimum: 0
+        total_tokens:
+          type: integer
+          minimum: 0
+    Metrics:
+      type: object
+      required: [latency_ms, time_to_first_token_ms, tokens_per_second]
+      properties:
+        latency_ms:
+          type: integer
+          minimum: 0
+        time_to_first_token_ms:
+          type: integer
+          minimum: 0
+        tokens_per_second:
+          type: number
+          minimum: 0
     ChatCompleteResponse:
       type: object
       required: [text, usage, metrics]
@@ -869,30 +325,9 @@ components:
         text:
           type: string
         usage:
-          type: object
-          required: [prompt_tokens, completion_tokens, total_tokens]
-          properties:
-            prompt_tokens:
-              type: integer
-              minimum: 0
-            completion_tokens:
-              type: integer
-              minimum: 0
-            total_tokens:
-              type: integer
-              minimum: 0
+          $ref: '#/components/schemas/Usage'
         metrics:
-          type: object
-          required: [latency_ms, time_to_first_token_ms, tokens_per_second]
-          properties:
-            latency_ms:
-              type: integer
-              minimum: 0
-            time_to_first_token_ms:
-              type: integer
-              minimum: 0
-            tokens_per_second:
-              type: number
+          $ref: '#/components/schemas/Metrics'
     ChatResetResponse:
       type: object
       required: [status, model_id]
@@ -902,180 +337,3 @@ components:
           const: cleared
         model_id:
           type: string
-    KnowledgeDocument:
-      type: object
-      required: [id, name, status, created_at]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        source:
-          type: string
-          nullable: true
-        status:
-          type: string
-          enum: [queued, indexing, ready, failed]
-        chunk_count:
-          type: integer
-          minimum: 0
-        created_at:
-          type: string
-          format: date-time
-        error:
-          type: string
-          nullable: true
-    SessionPrompt:
-      type: object
-      required: [mode, system_prompt, updated_at]
-      properties:
-        mode:
-          type: string
-          enum: [default, preset, custom]
-        preset_id:
-          type: string
-          nullable: true
-        system_prompt:
-          type: string
-        updated_at:
-          type: string
-          format: date-time
-    UpdatePromptRequest:
-      type: object
-      required: [mode]
-      properties:
-        mode:
-          type: string
-          enum: [default, preset, custom]
-        preset_id:
-          type: string
-        system_prompt:
-          type: string
-    McpConnector:
-      type: object
-      required: [id, name, transport, status, protocol_version, created_at]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        transport:
-          type: string
-          enum: [stdio, http_stream]
-        status:
-          type: string
-          enum: [connected, degraded, disconnected]
-        protocol_version:
-          type: string
-          example: 2025-06-18
-        command:
-          type: string
-          nullable: true
-        args:
-          type: array
-          items:
-            type: string
-        endpoint:
-          type: string
-          nullable: true
-        capabilities:
-          type: object
-          additionalProperties: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-          nullable: true
-    CreateConnectorRequest:
-      type: object
-      required: [name, transport]
-      properties:
-        name:
-          type: string
-        transport:
-          type: string
-          enum: [stdio, http_stream]
-        protocol_version:
-          type: string
-          default: 2025-06-18
-        command:
-          type: string
-        args:
-          type: array
-          items:
-            type: string
-        endpoint:
-          type: string
-    ValidateConnectorRequest:
-      allOf:
-        - $ref: '#/components/schemas/CreateConnectorRequest'
-      type: object
-      properties:
-        dry_run:
-          type: boolean
-          default: true
-    ValidateConnectorResponse:
-      type: object
-      required: [valid, checks]
-      properties:
-        valid:
-          type: boolean
-        checks:
-          type: array
-          items:
-            type: object
-            required: [name, ok]
-            properties:
-              name:
-                type: string
-              ok:
-                type: boolean
-              message:
-                type: string
-        warnings:
-          type: array
-          items:
-            type: string
-    McpConnectorTemplate:
-      type: object
-      required: [id, name, transport, defaults]
-      properties:
-        id:
-          type: string
-          example: filesystem
-        name:
-          type: string
-          example: Filesystem
-        description:
-          type: string
-        transport:
-          type: string
-          enum: [stdio, http_stream]
-        defaults:
-          type: object
-          properties:
-            command:
-              type: string
-            args:
-              type: array
-              items:
-                type: string
-            endpoint:
-              type: string
-        required_fields:
-          type: array
-          items:
-            type: string
-    McpToolSummary:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        input_schema:
-          type: object
-          additionalProperties: true

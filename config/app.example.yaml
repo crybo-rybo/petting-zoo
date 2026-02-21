@@ -2,57 +2,19 @@ server:
   host: 127.0.0.1
   port: 8080
   request_timeout_ms: 30000
-  max_upload_bytes: 26214400
-  cors:
-    enabled: true
-    allow_origins:
-      - http://localhost:5173
-    allow_methods: [GET, POST, PUT, DELETE, OPTIONS]
-    allow_headers: [Content-Type, Authorization, X-Correlation-Id]
 
 runtime:
   default_model_id: ""
   model_discovery_paths:
     - ./models
-  max_concurrent_generations: 1
-  queue_capacity: 128
-  stream_keepalive_ms: 15000
+  default_context_size: 8192
+  default_max_tokens: 512
 
 chat:
-  default_max_tokens: 512
   max_input_chars: 20000
-  rag:
-    default_enabled: false
-    default_top_k: 4
-    max_top_k: 50
-
-storage:
-  app_db_path: ./data/app.sqlite
-  context_db_path: ./data/context.sqlite
-  rag_store_path: ./data/rag_store.json
-  uploads_dir: ./data/uploads
 
 observability:
   log_level: info
-  structured_logging: true
-  emit_request_logs: true
-  include_source_location: false
   correlation_id:
     header_name: X-Correlation-Id
     generate_when_missing: true
-
-mcp:
-  enabled: true
-  protocol_version: "2025-06-18"
-  connector_startup_timeout_ms: 10000
-  connector_request_timeout_ms: 60000
-  connector_max_restarts: 3
-  transports:
-    stdio:
-      enabled: true
-    http_stream:
-      enabled: false
-
-security:
-  redact_sensitive_logs: true
-  allow_local_file_uploads_only: true

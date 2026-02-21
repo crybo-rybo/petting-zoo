@@ -38,6 +38,15 @@ done
 "${CURL_BIN}" -fsS "${BASE_URL}/" | grep -q 'Petting Zoo'
 
 code="$("${CURL_BIN}" -sS -o "${BODY_FILE}" -w "%{http_code}" \
+  "${BASE_URL}/api/mcp/catalog")"
+if [[ "${code}" != "404" ]]; then
+  echo "expected 404 from deferred endpoint /api/mcp/catalog, got ${code}" >&2
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+grep -q '"APP-NOT-IMPL-001"' "${BODY_FILE}"
+
+code="$("${CURL_BIN}" -sS -o "${BODY_FILE}" -w "%{http_code}" \
   -X POST "${BASE_URL}/api/chat/complete" \
   -H 'Content-Type: application/json' \
   -d '{"message":"hello"}')"
@@ -48,4 +57,13 @@ if [[ "${code}" != "409" ]]; then
   exit 1
 fi
 
+grep -q '"APP-STATE-409"' "${BODY_FILE}"
+
+code="$("${CURL_BIN}" -sS -o "${BODY_FILE}" -w "%{http_code}" \
+  -X POST "${BASE_URL}/api/chat/reset")"
+if [[ "${code}" != "409" ]]; then
+  echo "expected 409 from /api/chat/reset without active model, got ${code}" >&2
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
 grep -q '"APP-STATE-409"' "${BODY_FILE}"

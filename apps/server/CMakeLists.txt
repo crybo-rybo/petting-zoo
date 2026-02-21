@@ -1,4 +1,13 @@
 add_executable(petting_zoo_server
+  src/api_parsers.cpp
+  src/api_serialization.cpp
+  src/http_helpers.cpp
+  src/routes_chat.cpp
+  src/routes_deferred.cpp
+  src/routes_health.cpp
+  src/routes_models.cpp
+  src/routes_spa.cpp
+  src/runtime_state.cpp
   src/main.cpp
 )
 

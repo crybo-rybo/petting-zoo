@@ -5,6 +5,7 @@ add_executable(petting_zoo_server
   src/routes_chat.cpp
   src/routes_deferred.cpp
   src/routes_health.cpp
+  src/routes_mcp.cpp
   src/routes_models.cpp
   src/routes_spa.cpp
   src/runtime_state.cpp

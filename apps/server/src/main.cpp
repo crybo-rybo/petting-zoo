@@ -19,6 +19,7 @@ int main() {
   register_health_routes();
   register_model_routes(runtime_state);
   register_chat_routes(runtime_state);
+  register_mcp_routes(runtime_state);
   register_deferred_routes();
   register_spa_routes(web_root, index_html);
 

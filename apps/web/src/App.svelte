@@ -3,6 +3,8 @@
   import { renderAssistantMarkdown } from './lib/markdown_render';
   import { tick } from 'svelte';
   
+  import McpPanel from './McpPanel.svelte';
+
   import DOMPurify from 'dompurify';
   import 'highlight.js/styles/atom-one-dark.css';
 
@@ -326,6 +328,8 @@
       </div>
     {/if}
   </section>
+
+  <McpPanel {activeModelId} {busy} />
 
   <section class="card chat-container glass">
     {#if isResponseTopOffscreen}

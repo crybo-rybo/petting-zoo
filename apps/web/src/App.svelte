@@ -1,29 +1,10 @@
 <script lang="ts">
   import { metricsSummary, usageSummary } from './lib/chat_format';
+  import { renderAssistantMarkdown } from './lib/markdown_render';
   import { tick } from 'svelte';
   
-  import { marked } from 'marked';
   import DOMPurify from 'dompurify';
-  import hljs from 'highlight.js';
   import 'highlight.js/styles/atom-one-dark.css';
-
-  const renderer = {
-    code(token: any) {
-      const text = token.text;
-      const lang = token.lang;
-      const language = (lang && hljs.getLanguage(lang)) ? lang : 'plaintext';
-      const highlighted = hljs.highlight(text, { language }).value;
-      return `
-        <div class="code-block-wrapper">
-          <div class="code-header">
-            <span class="lang-label">${language}</span>
-            <button class="copy-btn">Copy</button>
-          </div>
-          <pre><code class="hljs language-${language}">${highlighted}</code></pre>
-        </div>`;
-    }
-  };
-  marked.use({ renderer });
 
   function handleCopy(event: MouseEvent) {
     const target = event.target as HTMLElement;
@@ -325,11 +306,16 @@
         disabled={busy || activeModelId !== null} 
       />
       {#if !activeModelId}
-        <button class="primary glow" on:click={loadAndSelectModel} disabled={busy || !modelPath.trim()}>Load Model</button>
+        <button class="primary glow load-model-btn" on:click={loadAndSelectModel} disabled={busy || !modelPath.trim()}>
+          <span>Load Model</span>
+        </button>
       {:else}
         <button class="danger ghost" on:click={unloadModel} disabled={busy}>Unload</button>
       {/if}
     </div>
+    {#if !activeModelId}
+      <p class="control-hint">Load a model to enable chat controls.</p>
+    {/if}
     {#if activeModelId}
       <div class="active-status-row fade-in">
         <p class="status-text">Active model: <span class="mono accent-text">{activeModelId}</span></p>
@@ -363,7 +349,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             {#if msg.role === 'assistant'}
               <div class="markdown-body {chatStreaming && i === chatHistory.length - 1 ? 'streaming' : ''}" on:click={handleCopy}>
-                {@html DOMPurify.sanitize(marked.parse(msg.content) as string)}
+                {@html DOMPurify.sanitize(renderAssistantMarkdown(msg.content))}
               </div>
             {:else}
               <pre>{msg.content}</pre>
@@ -551,51 +537,69 @@
   }
   
   input:disabled, textarea:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    opacity: 0.55;
+    cursor: default;
+    filter: saturate(0.65);
   }
 
   button {
     font-family: inherit;
-    border: 0;
-    border-radius: 12px;
-    padding: 0.75rem 1.2rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0.4rem 0.7rem;
+    min-height: 2.1rem;
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 0.88rem;
+    line-height: 1.1;
+    letter-spacing: 0.01em;
     cursor: pointer;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
+    white-space: nowrap;
   }
 
   button.primary {
-    background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+    background: linear-gradient(135deg, #148bc7, #356dd1);
+    border-color: rgba(125, 211, 252, 0.35);
     color: white;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  }
+
+  button.load-model-btn {
+    min-width: 8rem;
+    padding-inline: 0.7rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.1) inset;
   }
   
   button.glow:not(:disabled):hover {
-    box-shadow: 0 0 15px rgba(14, 165, 233, 0.4);
-    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(14, 165, 233, 0.22);
+    transform: translateY(-0.5px);
   }
 
   button.ghost {
-    background: transparent;
+    background: rgba(255, 255, 255, 0.02);
+    border-color: rgba(148, 163, 184, 0.24);
     color: var(--text-muted);
   }
   
   button.ghost:not(:disabled):hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(148, 163, 184, 0.38);
     color: var(--text-main);
   }
   
   button.danger.ghost {
+    border-color: rgba(239, 68, 68, 0.35);
     color: var(--danger);
   }
   
   button.danger.ghost:not(:disabled):hover {
-    background: var(--danger-muted);
+    background: rgba(239, 68, 68, 0.12);
   }
   
   button.danger-text {
@@ -603,10 +607,21 @@
   }
 
   button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    opacity: 0.48;
+    cursor: default;
+    color: rgba(203, 213, 225, 0.65);
+    border-color: rgba(148, 163, 184, 0.18);
+    background: rgba(51, 65, 85, 0.35);
+    filter: saturate(0.6);
     transform: none !important;
     box-shadow: none !important;
+  }
+
+  .control-hint {
+    margin: 0.6rem 0 0;
+    font-size: 0.78rem;
+    color: rgba(148, 163, 184, 0.9);
+    letter-spacing: 0.01em;
   }
 
   /* ---- STATUS ROW ---- */
@@ -697,9 +712,10 @@
     background: rgba(15, 23, 42, 0.9);
     color: #38bdf8;
     border: 1px solid rgba(56, 189, 248, 0.3);
-    border-radius: 999px;
-    padding: 0.5rem 1rem;
-    font-size: 0.85rem;
+    border-radius: 8px;
+    min-height: 1.8rem;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8rem;
     font-weight: 600;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     backdrop-filter: blur(8px);
@@ -819,8 +835,9 @@
   }
   
   .action-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.85rem;
+    min-height: 1.8rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
   }
 
   /* ---- MARKDOWN ---- */

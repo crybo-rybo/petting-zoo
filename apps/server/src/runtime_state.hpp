@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include <zoo/agent.hpp>
+#include <zoo/engine/context_database.hpp>
 
 struct ModelEntry {
   std::string id;
@@ -24,6 +25,8 @@ struct ParsedModelRegisterRequest {
 
 class RuntimeState {
  public:
+  RuntimeState();
+
   std::vector<ModelEntry> list_models() const;
   std::optional<std::string> active_model_id() const;
 
@@ -44,6 +47,9 @@ class RuntimeState {
   std::optional<std::string> reset_chat(std::string &error_code,
                                         std::string &error_message);
 
+  std::optional<std::string> clear_memory(std::string &error_code,
+                                          std::string &error_message);
+
   std::optional<zoo::Response> chat_stream(const std::string &message,
                                            std::function<void(std::string_view)> token_callback,
                                            std::string &error_code,
@@ -55,6 +61,7 @@ class RuntimeState {
   std::unordered_map<std::string, ModelEntry> models_;
   std::optional<std::string> active_model_id_;
   std::shared_ptr<zoo::Agent> agent_;
+  std::shared_ptr<zoo::engine::ContextDatabase> context_db_;
 };
 
 std::string sanitize_model_id(std::string input);

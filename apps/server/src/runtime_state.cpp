@@ -24,6 +24,13 @@ std::string sanitize_model_id(std::string input) {
   return input.substr(first, last - first + 1);
 }
 
+RuntimeState::RuntimeState() {
+  auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
+  if (db_result) {
+    context_db_ = std::move(*db_result);
+  }
+}
+
 std::vector<ModelEntry> RuntimeState::list_models() const {
   std::lock_guard<std::mutex> lock(mu_);
   std::vector<ModelEntry> out;
@@ -112,7 +119,12 @@ std::optional<ModelEntry> RuntimeState::select_model(const std::string &model_id
     return std::nullopt;
   }
 
-  std::shared_ptr<zoo::Agent> loaded(std::move(*created));
+  std::shared_ptr<zoo::Agent> loaded = std::shared_ptr<zoo::Agent>(std::move(*created));
+  
+  if (context_db_) {
+    loaded->set_context_database(context_db_);
+  }
+
   {
     std::lock_guard<std::mutex> lock(mu_);
     agent_ = std::move(loaded);
@@ -198,4 +210,39 @@ void RuntimeState::unload_model() {
   std::lock_guard<std::mutex> agent_lock(agent_mu_);
   agent_.reset();
   active_model_id_ = std::nullopt;
+}
+
+std::optional<std::string> RuntimeState::clear_memory(std::string &error_code,
+                                                      std::string &error_message) {
+  std::lock_guard<std::mutex> lock(mu_);
+  
+  if (!context_db_) {
+    error_code = "APP-STATE-500";
+    error_message = "Memory database is not initialized";
+    return std::nullopt;
+  }
+  
+  // Close the old database
+  context_db_.reset();
+
+  // Wipe the actual file
+  std::filesystem::remove("uploads/memory.db");
+
+  // Re-initialize the database
+  auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
+  if (db_result) {
+    context_db_ = std::move(*db_result);
+  } else {
+    error_code = "APP-DB-500";
+    error_message = "Failed to recreate memory database";
+    return std::nullopt;
+  }
+
+  // If there's an active agent, we need to update its reference
+  if (agent_) {
+    std::lock_guard<std::mutex> agent_lock(agent_mu_);
+    agent_->set_context_database(context_db_);
+  }
+
+  return active_model_id_.value_or("none");
 }

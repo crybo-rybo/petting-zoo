@@ -168,6 +168,23 @@
     }
   }
 
+  async function wipeMemory() {
+    if (!confirm("Are you sure you want to permanently clear the model's long-term memory?")) return;
+    apiError = '';
+    chatError = '';
+    busy = true;
+    try {
+      await requestJson('/api/chat/clear_memory', { method: 'POST' });
+      chatHistory = [];
+      chatUsage = '';
+      chatMetrics = '';
+    } catch (e) {
+      chatError = e instanceof Error ? e.message : 'unknown error';
+    } finally {
+      busy = false;
+    }
+  }
+
   initialize();
 </script>
 
@@ -191,7 +208,10 @@
       {/if}
     </div>
     {#if activeModelId}
-      <p class="status-text">Active model: <span class="mono">{activeModelId}</span></p>
+      <div class="active-status-row">
+        <p class="status-text">Active model: <span class="mono">{activeModelId}</span></p>
+        <div class="badge-memory" title="Long-term context database is active">🧠 Memory Active</div>
+      </div>
     {/if}
   </section>
 
@@ -232,6 +252,9 @@
         </button>
         <button class="ghost" on:click={resetChat} disabled={busy || !activeModelId || chatHistory.length === 0}>
           Reset
+        </button>
+        <button class="ghost danger-text" on:click={wipeMemory} disabled={busy || !activeModelId}>
+          Wipe Memory
         </button>
       </div>
     </div>
@@ -304,10 +327,25 @@
   .model-controls input {
     flex: 1;
   }
+  .active-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-top: 0.5rem;
+  }
   .status-text {
-    margin: 0.5rem 0 0 0;
+    margin: 0;
     font-size: 0.9rem;
     color: var(--muted);
+  }
+  .badge-memory {
+    background: #fef08a;
+    color: #854d0e;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
   }
 
   .chat-container {
@@ -398,6 +436,10 @@
   button.ghost {
     background: #e2e8f0;
     color: #0f172a;
+  }
+  
+  button.danger-text {
+    color: var(--danger);
   }
   
   button.danger {

@@ -1,5 +1,7 @@
 #include "routes.hpp"
 
+#include <drogon/HttpResponse.h>
+#include <drogon/HttpTypes.h>
 #include <drogon/drogon.h>
 
 #include <thread>
@@ -157,6 +159,29 @@ void register_chat_routes(RuntimeState &runtime_state) {
 
         Json::Value body(Json::objectValue);
         body["status"] = "cleared";
+        body["model_id"] = *model_id;
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        write_json(req, resp, body);
+        cb(resp);
+      },
+      {drogon::Post});
+
+  drogon::app().registerHandler(
+      "/api/chat/clear_memory",
+      [&runtime_state](const drogon::HttpRequestPtr &req,
+                       std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
+        std::string error_code;
+        std::string error_message;
+        const auto model_id = runtime_state.clear_memory(error_code, error_message);
+        if (!model_id.has_value()) {
+          auto status = error_code == "APP-STATE-500" ? drogon::k500InternalServerError : drogon::k502BadGateway;
+          write_error(req, std::move(cb), status, error_code, "server_error",
+                      error_message, false);
+          return;
+        }
+
+        Json::Value body(Json::objectValue);
+        body["status"] = "memory_wiped";
         body["model_id"] = *model_id;
         auto resp = drogon::HttpResponse::newHttpResponse();
         write_json(req, resp, body);

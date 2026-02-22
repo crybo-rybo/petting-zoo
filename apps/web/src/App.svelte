@@ -545,9 +545,9 @@
   button {
     font-family: inherit;
     border: 1px solid transparent;
-    border-radius: 10px;
-    padding: 0.55rem 0.95rem;
-    min-height: 2.35rem;
+    border-radius: 6px;
+    padding: 0.4rem 0.7rem;
+    min-height: 2.1rem;
     font-weight: 600;
     font-size: 0.88rem;
     line-height: 1.1;
@@ -569,8 +569,8 @@
   }
 
   button.load-model-btn {
-    min-width: 8.2rem;
-    padding-inline: 0.85rem;
+    min-width: 8rem;
+    padding-inline: 0.7rem;
     white-space: nowrap;
     flex-shrink: 0;
     box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.1) inset;
@@ -712,9 +712,9 @@
     background: rgba(15, 23, 42, 0.9);
     color: #38bdf8;
     border: 1px solid rgba(56, 189, 248, 0.3);
-    border-radius: 999px;
-    min-height: 2rem;
-    padding: 0.4rem 0.85rem;
+    border-radius: 8px;
+    min-height: 1.8rem;
+    padding: 0.3rem 0.7rem;
     font-size: 0.8rem;
     font-weight: 600;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -835,8 +835,8 @@
   }
   
   .action-btn {
-    min-height: 2rem;
-    padding: 0.35rem 0.7rem;
+    min-height: 1.8rem;
+    padding: 0.25rem 0.6rem;
     font-size: 0.8rem;
   }
 

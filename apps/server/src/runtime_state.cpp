@@ -192,3 +192,10 @@ std::optional<std::string> RuntimeState::reset_chat(std::string &error_code,
   agent->clear_history();
   return model_id;
 }
+
+void RuntimeState::unload_model() {
+  std::lock_guard<std::mutex> lock(mu_);
+  std::lock_guard<std::mutex> agent_lock(agent_mu_);
+  agent_.reset();
+  active_model_id_ = std::nullopt;
+}

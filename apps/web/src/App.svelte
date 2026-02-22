@@ -1,39 +1,20 @@
 <script lang="ts">
   import { metricsSummary, usageSummary } from './lib/chat_format';
 
-  type Health = {
-    status: string;
-    service: string;
-    version: string;
-    timestamp: string;
-  };
-
-  type ModelSummary = {
-    id: string;
-    display_name: string;
-    path: string;
-    status: 'available' | 'loading' | 'unavailable';
-    context_size?: number;
-  };
-
-  let health: Health | null = null;
-  let healthError = '';
-
-  let models: ModelSummary[] = [];
-  let activeModelId: string | null = null;
+  // State
   let modelPath = '';
-  let modelDisplayName = '';
-  let selectedModelToLoad = '';
+  let activeModelId: string | null = null;
+  let busy = false;
+  let apiError = '';
 
+  // Chat State
+  type ChatMessage = { role: 'user' | 'assistant'; content: string };
+  let chatHistory: ChatMessage[] = [];
   let chatInput = '';
-  let chatOutput = '';
   let chatError = '';
   let chatUsage = '';
   let chatMetrics = '';
   let chatStreaming = false;
-
-  let apiError = '';
-  let busy = false;
 
   async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     const res = await fetch(input, init);
@@ -45,39 +26,19 @@
           message = body.error.message;
         }
       } catch {
-        // Fallback to status text when body is not JSON.
+        // Fallback to status text
       }
       throw new Error(message);
     }
     return (await res.json()) as T;
   }
 
-  async function loadHealth() {
-    healthError = '';
-    try {
-      health = await requestJson<Health>('/healthz');
-    } catch (e) {
-      healthError = e instanceof Error ? e.message : 'unknown error';
-      health = null;
-    }
-  }
-
-  async function loadModels() {
-    const body = await requestJson<{ models: ModelSummary[]; active_model_id: string | null }>(
-      '/api/models'
-    );
-    models = body.models ?? [];
-    activeModelId = body.active_model_id ?? null;
-    if (!selectedModelToLoad && activeModelId) {
-      selectedModelToLoad = activeModelId;
-    }
-  }
-
   async function initialize() {
     apiError = '';
     busy = true;
     try {
-      await Promise.all([loadHealth(), loadModels()]);
+      const body = await requestJson<{ active_model_id: string | null }>('/api/models');
+      activeModelId = body.active_model_id ?? null;
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
     } finally {
@@ -85,22 +46,24 @@
     }
   }
 
-  async function registerModel() {
+  async function loadAndSelectModel() {
+    if (!modelPath.trim()) return;
     apiError = '';
     chatError = '';
     busy = true;
     try {
-      await requestJson<{ model: ModelSummary }>('/api/models/register', {
+      const regResp = await requestJson<{ model: { id: string } }>('/api/models/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          path: modelPath.trim(),
-          display_name: modelDisplayName.trim() || undefined
-        })
+        body: JSON.stringify({ path: modelPath.trim(), display_name: '' })
       });
-      modelPath = '';
-      modelDisplayName = '';
-      await loadModels();
+      
+      const selResp = await requestJson<{ active_model: { id: string } }>('/api/models/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_id: regResp.model.id })
+      });
+      activeModelId = selResp.active_model.id;
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
     } finally {
@@ -108,20 +71,13 @@
     }
   }
 
-  async function selectModel() {
-    if (!selectedModelToLoad) {
-      return;
-    }
+  async function unloadModel() {
     apiError = '';
     chatError = '';
     busy = true;
     try {
-      await requestJson<{ active_model: ModelSummary }>('/api/models/select', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_id: selectedModelToLoad })
-      });
-      await loadModels();
+      await requestJson<{ status: string }>('/api/models/unload', { method: 'POST' });
+      activeModelId = null;
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
     } finally {
@@ -130,23 +86,25 @@
   }
 
   async function sendChat() {
-    if (!chatInput.trim()) {
-      return;
-    }
+    if (!chatInput.trim() || !activeModelId) return;
 
-    apiError = '';
+    chatHistory = [...chatHistory, { role: 'user', content: chatInput.trim() }];
+    chatInput = '';
     chatError = '';
-    chatOutput = '';
     chatUsage = '';
     chatMetrics = '';
     busy = true;
     chatStreaming = true;
 
+    chatHistory = [...chatHistory, { role: 'assistant', content: '' }];
+    
     try {
+      const latestMessage = chatHistory[chatHistory.length - 2].content;
+
       const resp = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: chatInput.trim() })
+        body: JSON.stringify({ message: latestMessage })
       });
 
       if (!resp.ok) {
@@ -157,8 +115,7 @@
         } catch { /* ignore */ }
         throw new Error(message);
       }
-
-      if (!resp.body) throw new Error('No response body from stream endpoint');
+      if (!resp.body) throw new Error('No response body');
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
@@ -174,23 +131,16 @@
 
         for (const part of parts) {
           if (!part.startsWith('data: ')) continue;
-          const event = JSON.parse(part.slice(6)) as {
-            type: string;
-            content?: string;
-            text?: string;
-            usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
-            metrics?: { latency_ms: number; time_to_first_token_ms: number; tokens_per_second: number };
-            code?: string;
-            message?: string;
-          };
+          const event = JSON.parse(part.slice(6));
 
           if (event.type === 'token' && event.content !== undefined) {
-            chatOutput += event.content;
+             chatHistory[chatHistory.length - 1].content += event.content;
+             chatHistory = [...chatHistory]; // trigger reactivity
           } else if (event.type === 'done') {
             if (event.usage) chatUsage = usageSummary(event.usage);
             if (event.metrics) chatMetrics = metricsSummary(event.metrics);
           } else if (event.type === 'error') {
-            chatError = event.message ?? event.code ?? 'unknown stream error';
+            chatError = event.message ?? event.code ?? 'error';
           }
         }
       }
@@ -207,10 +157,8 @@
     chatError = '';
     busy = true;
     try {
-      await requestJson<{ status: string; model_id: string }>('/api/chat/reset', {
-        method: 'POST'
-      });
-      chatOutput = '';
+      await requestJson('/api/chat/reset', { method: 'POST' });
+      chatHistory = [];
       chatUsage = '';
       chatMetrics = '';
     } catch (e) {
@@ -221,113 +169,76 @@
   }
 
   initialize();
-
-  // Poll for model state changes every 5 s (silently, only when not busy).
-  setInterval(() => {
-    if (!busy) loadModels().catch(() => {});
-  }, 5000);
 </script>
 
 <main class="shell">
   <section class="hero">
-    <p class="eyebrow">MVP RESET</p>
     <h1>Petting Zoo</h1>
-    <p class="lead">Load a local GGUF model with zoo-keeper and chat from the browser.</p>
-    <div class="hero-actions">
-      <button on:click={initialize} disabled={busy}>Reload</button>
-      <button class="ghost" on:click={loadHealth} disabled={busy}>Health Only</button>
-    </div>
   </section>
 
-  <section class="card">
-    <h2>Server Health</h2>
-    {#if health}
-      <dl>
-        <div><dt>Status</dt><dd>{health.status}</dd></div>
-        <div><dt>Service</dt><dd>{health.service}</dd></div>
-        <div><dt>Version</dt><dd>{health.version}</dd></div>
-        <div><dt>Timestamp</dt><dd>{health.timestamp}</dd></div>
-      </dl>
-    {:else if healthError}
-      <p class="error">Failed to load health: {healthError}</p>
-    {:else}
-      <p>Loading...</p>
+  <!-- Model loading / unloading -->
+  <section class="card model-controls">
+    <div class="model-input-row">
+      <input 
+        bind:value={modelPath} 
+        placeholder="/absolute/path/to/model.gguf" 
+        disabled={busy || activeModelId !== null} 
+      />
+      {#if !activeModelId}
+        <button on:click={loadAndSelectModel} disabled={busy || !modelPath.trim()}>Load</button>
+      {:else}
+        <button class="danger" on:click={unloadModel} disabled={busy}>Unload</button>
+      {/if}
+    </div>
+    {#if activeModelId}
+      <p class="status-text">Active model: <span class="mono">{activeModelId}</span></p>
     {/if}
   </section>
 
-  <section class="card">
-    <h2>Model Runtime</h2>
-    <p class="lead-in-card">Register a GGUF file path from this server, then load it as the active model.</p>
-    <div class="grid">
-      <label class="span-2">
-        Model Path (server filesystem)
-        <input bind:value={modelPath} placeholder="/absolute/path/to/model.gguf" />
-      </label>
-      <label class="span-2">
-        Display Name (optional)
-        <input bind:value={modelDisplayName} placeholder="Llama 3 8B Q4" />
-      </label>
-    </div>
-    <div class="row-actions">
-      <button on:click={registerModel} disabled={busy || !modelPath.trim()}>Register Model</button>
-      <button class="ghost" on:click={loadModels} disabled={busy}>Refresh Models</button>
-    </div>
-
-    {#if models.length > 0}
-      <div class="grid">
-        <label class="span-2">
-          Registered Models
-          <select bind:value={selectedModelToLoad}>
-            <option value="">Select model...</option>
-            {#each models as model}
-              <option value={model.id}>
-                {model.display_name} ({model.status}) {model.id === activeModelId ? ' [active]' : ''}
-              </option>
-            {/each}
-          </select>
-        </label>
-      </div>
-      <div class="row-actions">
-        <button on:click={selectModel} disabled={busy || !selectedModelToLoad}>Load Selected Model</button>
-      </div>
-      <ul>
-        {#each models as model}
-          <li>
-            <span class="mono">{model.id}</span> - {model.display_name} - {model.status}
-            <br />
-            <span class="mono">{model.path}</span>
-          </li>
+  <section class="card chat-container">
+    <div class="chat-history">
+      {#if chatHistory.length === 0}
+        <p class="empty-state">No messages yet. Send a message to start.</p>
+      {:else}
+        {#each chatHistory as msg, i}
+          <div class="message {msg.role}">
+            <strong>{msg.role === 'user' ? 'You' : 'Model'}</strong>
+            <pre>{msg.content}{#if chatStreaming && i === chatHistory.length - 1}<span class="cursor">▌</span>{/if}</pre>
+          </div>
         {/each}
-      </ul>
-    {:else}
-      <p>No registered models yet.</p>
-    {/if}
-  </section>
-
-  <section class="card">
-    <h2>Chat</h2>
-    <p class="lead-in-card">
-      Active model: <span class="mono">{activeModelId ?? 'none loaded'}</span>
-    </p>
-    <label>
-      Prompt
-      <textarea bind:value={chatInput} rows="5" placeholder="Ask something..."></textarea>
-    </label>
-    <div class="row-actions">
-      <button on:click={sendChat} disabled={busy || !chatInput.trim() || !activeModelId}>
-        {chatStreaming ? 'Streaming…' : 'Send'}
-      </button>
-      <button class="ghost" on:click={resetChat} disabled={busy || !activeModelId}>Reset Chat History</button>
+      {/if}
     </div>
+    
     {#if chatError}
       <p class="error">Chat error: {chatError}</p>
     {/if}
-    {#if chatOutput || chatStreaming}
-      <h3>Response {#if chatStreaming}<span class="streaming-indicator">●</span>{/if}</h3>
-      <pre>{chatOutput}{#if chatStreaming}<span class="cursor">▌</span>{/if}</pre>
-      {#if chatUsage}<p class="mono">Usage: {chatUsage}</p>{/if}
-      {#if chatMetrics}<p class="mono">Metrics: {chatMetrics}</p>{/if}
-    {/if}
+    
+    <div class="chat-input-row">
+      <textarea 
+        bind:value={chatInput} 
+        rows="2" 
+        placeholder="Ask something..."
+        disabled={busy || !activeModelId}
+        on:keydown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendChat();
+          }
+        }}
+      ></textarea>
+      <div class="chat-actions">
+        <button on:click={sendChat} disabled={busy || !chatInput.trim() || !activeModelId}>
+          {chatStreaming ? 'Streaming…' : 'Send'}
+        </button>
+        <button class="ghost" on:click={resetChat} disabled={busy || !activeModelId || chatHistory.length === 0}>
+          Reset
+        </button>
+      </div>
+    </div>
+    <div class="metrics">
+      {#if chatUsage}<span class="mono">Usage: {chatUsage}</span>{/if}
+      {#if chatMetrics}<span class="mono"> | Metrics: {chatMetrics}</span>{/if}
+    </div>
   </section>
 
   {#if apiError}
@@ -363,40 +274,20 @@
     max-width: 900px;
     margin: 0 auto;
     padding: 2rem 1rem 3rem;
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    box-sizing: border-box;
     gap: 1rem;
   }
 
   .hero {
-    background: rgb(15 23 42 / 72%);
-    border: 1px solid rgb(148 163 184 / 28%);
-    border-radius: 18px;
-    padding: 1.5rem;
+    text-align: center;
   }
-
-  .eyebrow {
+  .hero h1 {
     margin: 0;
-    letter-spacing: 0.16em;
-    font-size: 0.72rem;
-    color: #bfdbfe;
-    font-family: 'IBM Plex Mono', monospace;
-  }
-
-  h1 {
-    margin: 0.35rem 0 0;
-    font-size: clamp(2rem, 4vw, 3rem);
-  }
-
-  .lead {
-    color: #d1d5db;
-    max-width: 72ch;
-  }
-
-  .hero-actions,
-  .row-actions {
-    display: flex;
-    gap: 0.6rem;
-    flex-wrap: wrap;
+    font-size: 2.5rem;
+    color: #f8fafc;
   }
 
   .card {
@@ -406,71 +297,91 @@
     padding: 1rem 1.2rem;
   }
 
-  .lead-in-card {
-    color: var(--muted);
-    margin-top: 0;
+  .model-controls .model-input-row {
+    display: flex;
+    gap: 0.5rem;
   }
-
-  h2,
-  h3 {
-    margin-top: 0;
+  .model-controls input {
+    flex: 1;
   }
-
-  dl {
-    margin: 0;
-    display: grid;
-    gap: 0.55rem;
-  }
-
-  dl div {
-    display: grid;
-    grid-template-columns: 9rem 1fr;
-    border-bottom: 1px dashed #cbd5e1;
-    padding-bottom: 0.35rem;
-  }
-
-  dt,
-  .mono {
-    font-family: 'IBM Plex Mono', monospace;
-  }
-
-  dt {
+  .status-text {
+    margin: 0.5rem 0 0 0;
+    font-size: 0.9rem;
     color: var(--muted);
   }
 
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.7rem;
-  }
-
-  .span-2 {
-    grid-column: span 2;
-  }
-
-  label {
+  .chat-container {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    font-size: 0.9rem;
+    gap: 1rem;
+    overflow: hidden;
   }
 
-  input,
-  select,
-  textarea {
+  .chat-history {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding-right: 0.5rem;
+  }
+
+  .message {
+    padding: 0.8rem;
+    border-radius: 12px;
+  }
+  .message.user {
+    background: #e0f2fe;
+    align-self: flex-end;
+    max-width: 80%;
+  }
+  .message.assistant {
+    background: #f1f5f9;
+    align-self: flex-start;
+    max-width: 95%;
+  }
+  .message pre {
+    margin: 0.5rem 0 0 0;
+    white-space: pre-wrap;
+    font-family: inherit;
+    font-size: 0.95rem;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+  .empty-state {
+    color: var(--muted);
+    text-align: center;
+    margin: auto;
+  }
+
+  .chat-input-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .chat-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }
+
+  .metrics {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: right;
+  }
+
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  input, textarea {
     font: inherit;
     border: 1px solid #cbd5e1;
     border-radius: 10px;
     padding: 0.5rem 0.6rem;
-  }
-
-  pre {
-    background: #0f172a;
-    color: #f8fafc;
-    border-radius: 10px;
-    padding: 0.8rem;
-    overflow-x: auto;
-    white-space: pre-wrap;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   button {
@@ -481,11 +392,17 @@
     background: linear-gradient(90deg, var(--accent), #38bdf8);
     color: #082f49;
     cursor: pointer;
+    white-space: nowrap;
   }
 
   button.ghost {
     background: #e2e8f0;
     color: #0f172a;
+  }
+  
+  button.danger {
+    background: var(--danger);
+    color: white;
   }
 
   button:disabled {
@@ -493,41 +410,15 @@
     cursor: not-allowed;
   }
 
-  .error {
-    color: var(--danger);
-  }
-
-  .streaming-indicator {
-    color: var(--accent);
-    animation: pulse 1s ease-in-out infinite;
-  }
+  .error { color: var(--danger); font-weight: bold; }
 
   .cursor {
     animation: blink 0.7s step-end infinite;
     color: var(--accent);
   }
 
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
   @keyframes blink {
     0%, 100% { opacity: 1; }
     50% { opacity: 0; }
-  }
-
-  @media (max-width: 760px) {
-    .grid {
-      grid-template-columns: 1fr;
-    }
-
-    .span-2 {
-      grid-column: span 1;
-    }
-
-    dl div {
-      grid-template-columns: 1fr;
-    }
   }
 </style>

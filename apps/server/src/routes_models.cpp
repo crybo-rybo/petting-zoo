@@ -99,4 +99,17 @@ void register_model_routes(RuntimeState &runtime_state) {
         cb(resp);
       },
       {drogon::Post});
+
+  drogon::app().registerHandler(
+      "/api/models/unload",
+      [&runtime_state](const drogon::HttpRequestPtr &req,
+                       std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
+        runtime_state.unload_model();
+        Json::Value body(Json::objectValue);
+        body["status"] = "unloaded";
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        write_json(req, resp, body);
+        cb(resp);
+      },
+      {drogon::Post});
 }

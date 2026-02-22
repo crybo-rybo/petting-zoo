@@ -35,6 +35,8 @@ class RuntimeState {
                                          std::string &error_code,
                                          std::string &error_message);
 
+  void unload_model();
+
   std::optional<zoo::Response> chat_complete(const std::string &message,
                                              std::string &error_code,
                                              std::string &error_message);

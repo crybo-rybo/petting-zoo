@@ -9,6 +9,9 @@
 
 #include <zoo/agent.hpp>
 #include <zoo/engine/context_database.hpp>
+#ifdef ZOO_ENABLE_MCP
+#include <zoo/mcp/mcp_client.hpp>
+#endif
 
 struct ModelEntry {
   std::string id;
@@ -22,6 +25,19 @@ struct ParsedModelRegisterRequest {
   std::string path;
   std::optional<std::string> display_name;
 };
+
+#ifdef ZOO_ENABLE_MCP
+struct McpConnectorEntry {
+  std::string id;
+  zoo::mcp::McpClient::Config config;
+};
+
+struct ParsedMcpConnectRequest {
+  std::string id;
+  std::string command;
+  std::vector<std::string> args;
+};
+#endif
 
 class RuntimeState {
  public:
@@ -55,6 +71,26 @@ class RuntimeState {
                                            std::string &error_code,
                                            std::string &error_message);
 
+#ifdef ZOO_ENABLE_MCP
+  std::vector<McpConnectorEntry> list_mcp_connectors() const;
+
+  std::optional<McpConnectorEntry> add_mcp_connector(const ParsedMcpConnectRequest &req,
+                                                     std::string &error_code,
+                                                     std::string &error_message);
+
+  bool remove_mcp_connector(const std::string &id,
+                            std::string &error_code,
+                            std::string &error_message);
+
+  std::optional<zoo::Agent::McpServerSummary> connect_mcp_server(const std::string &id,
+                                                                 std::string &error_code,
+                                                                 std::string &error_message);
+
+  bool disconnect_mcp_server(const std::string &id,
+                             std::string &error_code,
+                             std::string &error_message);
+#endif
+
  private:
   mutable std::mutex mu_;
   mutable std::mutex agent_mu_;  // Serializes agent operations (chat, reset)
@@ -62,6 +98,9 @@ class RuntimeState {
   std::optional<std::string> active_model_id_;
   std::shared_ptr<zoo::Agent> agent_;
   std::shared_ptr<zoo::engine::ContextDatabase> context_db_;
+#ifdef ZOO_ENABLE_MCP
+  std::unordered_map<std::string, McpConnectorEntry> mcp_connectors_;
+#endif
 };
 
 std::string sanitize_model_id(std::string input);

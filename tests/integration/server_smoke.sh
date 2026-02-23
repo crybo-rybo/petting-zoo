@@ -38,13 +38,13 @@ done
 "${CURL_BIN}" -fsS "${BASE_URL}/" | grep -q 'Petting Zoo'
 
 code="$("${CURL_BIN}" -sS -o "${BODY_FILE}" -w "%{http_code}" \
-  "${BASE_URL}/api/mcp/catalog")"
-if [[ "${code}" != "404" ]]; then
-  echo "expected 404 from deferred endpoint /api/mcp/catalog, got ${code}" >&2
+  "${BASE_URL}/api/mcp/connectors")"
+if [[ "${code}" != "200" ]]; then
+  echo "expected 200 from /api/mcp/connectors, got ${code}" >&2
   cat "${BODY_FILE}" >&2
   exit 1
 fi
-grep -q '"APP-NOT-IMPL-001"' "${BODY_FILE}"
+grep -q '"connectors"' "${BODY_FILE}"
 
 code="$("${CURL_BIN}" -sS -o "${BODY_FILE}" -w "%{http_code}" \
   -X POST "${BASE_URL}/api/chat/complete" \

@@ -246,3 +246,123 @@ std::optional<std::string> RuntimeState::clear_memory(std::string &error_code,
 
   return active_model_id_.value_or("none");
 }
+
+#ifdef ZOO_ENABLE_MCP
+std::vector<McpConnectorEntry> RuntimeState::list_mcp_connectors() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  std::vector<McpConnectorEntry> out;
+  out.reserve(mcp_connectors_.size());
+  for (const auto &kv : mcp_connectors_) {
+    out.push_back(kv.second);
+  }
+  return out;
+}
+
+std::optional<McpConnectorEntry> RuntimeState::add_mcp_connector(
+    const ParsedMcpConnectRequest &req, std::string &error_code,
+    std::string &error_message) {
+  std::lock_guard<std::mutex> lock(mu_);
+  if (mcp_connectors_.contains(req.id)) {
+    error_code = "APP-MCP-409";
+    error_message = "Connector ID already exists";
+    return std::nullopt;
+  }
+
+  McpConnectorEntry entry;
+  entry.id = req.id;
+  entry.config.server_id = req.id;
+  entry.config.transport.command = req.command;
+  entry.config.transport.args = req.args;
+
+  mcp_connectors_[req.id] = entry;
+  return entry;
+}
+
+bool RuntimeState::remove_mcp_connector(const std::string &id,
+                                        std::string &error_code,
+                                        std::string &error_message) {
+  std::lock_guard<std::mutex> lock(mu_);
+  if (!mcp_connectors_.contains(id)) {
+    error_code = "APP-MCP-404";
+    error_message = "Connector not found";
+    return false;
+  }
+  
+  // If we have an active agent, try to disconnect it just in case
+  if (agent_) {
+    std::lock_guard<std::mutex> agent_lock(agent_mu_);
+    (void)agent_->remove_mcp_server(id);
+  }
+
+  mcp_connectors_.erase(id);
+  return true;
+}
+
+std::optional<zoo::Agent::McpServerSummary> RuntimeState::connect_mcp_server(
+    const std::string &id, std::string &error_code, std::string &error_message) {
+  McpConnectorEntry entry;
+  std::shared_ptr<zoo::Agent> agent;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    const auto it = mcp_connectors_.find(id);
+    if (it == mcp_connectors_.end()) {
+      error_code = "APP-MCP-404";
+      error_message = "Connector not found";
+      return std::nullopt;
+    }
+    entry = it->second;
+    agent = agent_;
+  }
+
+  if (!agent) {
+    error_code = "APP-STATE-409";
+    error_message = "No active model is loaded (cannot connect MCP tools without agent)";
+    return std::nullopt;
+  }
+
+  std::lock_guard<std::mutex> agent_lock(agent_mu_);
+  auto result = agent->add_mcp_server(entry.config);
+  if (!result) {
+    error_code = "APP-UPSTREAM-001";
+    error_message = result.error().to_string();
+    return std::nullopt;
+  }
+
+  auto summary = agent->get_mcp_server(id);
+  if (!summary) {
+    error_code = "APP-UPSTREAM-002";
+    error_message = "Failed to fetch summary after connection";
+    return std::nullopt; 
+  }
+  return *summary;
+}
+
+bool RuntimeState::disconnect_mcp_server(const std::string &id,
+                                         std::string &error_code,
+                                         std::string &error_message) {
+  std::shared_ptr<zoo::Agent> agent;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (!mcp_connectors_.contains(id)) {
+      error_code = "APP-MCP-404";
+      error_message = "Connector not found";
+      return false;
+    }
+    agent = agent_;
+  }
+
+  if (!agent) {
+    // If agent is gone, then it's effectively disconnected
+    return true; 
+  }
+
+  std::lock_guard<std::mutex> agent_lock(agent_mu_);
+  auto result = agent->remove_mcp_server(id);
+  if (!result) {
+    error_code = "APP-UPSTREAM-001";
+    error_message = result.error().to_string();
+    return false;
+  }
+  return true;
+}
+#endif

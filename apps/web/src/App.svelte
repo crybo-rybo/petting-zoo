@@ -46,7 +46,7 @@
   let activeModelId: string | null = null;
   let busy = false;
   let apiError = '';
-  let isModelPanelOpen = true;
+  let isModelModalOpen = false;
 
   // Chat State
   type ChatMessage = { role: 'user' | 'assistant'; content: string };
@@ -301,61 +301,67 @@
     </div>
   </header>
 
-  <!-- Model loading / unloading -->
-  <section class="card model-controls glass">
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <header class="panel-header" on:click={() => isModelPanelOpen = !isModelPanelOpen}>
-      <div class="header-title">
-        <h3 class:active={isModelPanelOpen}>Model Configuration</h3>
-        {#if !isModelPanelOpen}
-          <span class="header-summary fade-in">
-            {#if activeModelId}
-              Active: <span class="mono accent-text">{activeModelId}</span>
-            {:else}
-              No model loaded
-            {/if}
-          </span>
-        {/if}
-      </div>
-      <div class="chevron" class:open={isModelPanelOpen}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-      </div>
-    </header>
-
-    {#if isModelPanelOpen}
-      <div class="panel-content" transition:slide|local={{ duration: 250 }}>
-        <div class="model-input-row">
-          <input 
-            bind:value={modelPath} 
-            placeholder="/absolute/path/to/model.gguf" 
-            disabled={busy || activeModelId !== null} 
-          />
-          {#if !activeModelId}
-            <button class="primary glow load-model-btn" on:click={loadAndSelectModel} disabled={busy || !modelPath.trim()}>
-              <span>Load Model</span>
-            </button>
+  <!-- Top Tabs -->
+  <div class="top-tabs">
+    <button class="ghost tab-btn" on:click={() => isModelModalOpen = true}>
+      <span class="tab-icon">🤠</span>
+      <div class="tab-info">
+        <span class="tab-label">Model Configuration</span>
+        <span class="tab-summary">
+          {#if activeModelId}
+            Active: <span class="mono accent-text" title={activeModelId}>{activeModelId.split('/').pop() || activeModelId}</span>
           {:else}
-            <button class="danger ghost" on:click={unloadModel} disabled={busy}>Unload</button>
+            No model loaded
+          {/if}
+        </span>
+      </div>
+    </button>
+    
+    <McpPanel {activeModelId} {busy} />
+  </div>
+
+  <!-- Model Configuration Modal -->
+  {#if isModelModalOpen}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="modal-backdrop fade-in" on:click={() => isModelModalOpen = false}>
+      <div class="modal-content slide-up" on:click|stopPropagation>
+        <div class="modal-header">
+          <h3>Model Configuration</h3>
+          <button class="ghost action-btn" on:click={() => isModelModalOpen = false}>✕</button>
+        </div>
+        
+        <div class="panel-content">
+          <div class="model-input-row">
+            <input 
+              bind:value={modelPath} 
+              placeholder="/absolute/path/to/model.gguf" 
+              disabled={busy || activeModelId !== null} 
+            />
+            {#if !activeModelId}
+              <button class="primary glow load-model-btn" on:click={loadAndSelectModel} disabled={busy || !modelPath.trim()}>
+                <span>Load Model</span>
+              </button>
+            {:else}
+              <button class="danger ghost" on:click={unloadModel} disabled={busy}>Unload</button>
+            {/if}
+          </div>
+          {#if !activeModelId}
+            <p class="control-hint">Load a model to enable chat controls.</p>
+          {/if}
+          {#if activeModelId}
+            <div class="active-status-row fade-in">
+              <p class="status-text">Active model: <span class="mono accent-text">{activeModelId}</span></p>
+              <div class="badge-memory" title="Long-term context database is active">
+                <span class="badge-icon">🧠</span>
+                <span class="badge-text">Memory Active</span>
+              </div>
+            </div>
           {/if}
         </div>
-        {#if !activeModelId}
-          <p class="control-hint">Load a model to enable chat controls.</p>
-        {/if}
-        {#if activeModelId}
-          <div class="active-status-row fade-in">
-            <p class="status-text">Active model: <span class="mono accent-text">{activeModelId}</span></p>
-            <div class="badge-memory" title="Long-term context database is active">
-              <span class="badge-icon">🧠</span>
-              <span class="badge-text">Memory Active</span>
-            </div>
-          </div>
-        {/if}
       </div>
-    {/if}
-  </section>
-
-  <McpPanel {activeModelId} {busy} />
+    </div>
+  {/if}
 
   <section class="card chat-container glass">
     {#if isResponseTopOffscreen}
@@ -452,23 +458,23 @@
 
 <style>
   :global(:root) {
-    --bg-base: #020617; /* Very dark blue/black */
-    --bg-glass: rgba(15, 23, 42, 0.6);
-    --bg-glass-hover: rgba(15, 23, 42, 0.8);
-    --border-glass: rgba(255, 255, 255, 0.08);
+    --bg-base: #fdfbf7; /* Desert Creme */
+    --bg-card: #ffffff;
+    --border-main: #233d31; /* Dark Muted Green */
     
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
+    --text-main: #233d31;
+    --text-muted: #5a7366;
     
-    --accent-glow: #0ea5e9;
-    --accent-magenta: #d946ef;
+    --accent-orange: #d97746; /* Burnt Orange */
+    --accent-orange-hover: #e08b5e;
     
-    --msg-user: rgba(14, 165, 233, 0.15);
-    --msg-assistant: rgba(255, 255, 255, 0.03);
+    --msg-user: #d97746;
+    --msg-assistant: #ffffff;
     
-    --danger: #ef4444;
-    --danger-muted: rgba(239, 68, 68, 0.15);
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    --danger: #cf4f4f;
+    --danger-muted: rgba(207, 79, 79, 0.15);
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 600;
   }
 
   :global(body) {
@@ -476,10 +482,6 @@
     min-height: 100vh;
     color: var(--text-main);
     background-color: var(--bg-base);
-    background-image: 
-      radial-gradient(circle at 15% 50%, rgba(14, 165, 233, 0.15), transparent 25%),
-      radial-gradient(circle at 85% 30%, rgba(217, 70, 239, 0.15), transparent 25%);
-    background-attachment: fixed;
   }
 
   /* ---- LAYOUT ---- */
@@ -498,9 +500,10 @@
     display: flex;
     justify-content: center;
     padding: 1rem;
-    border-radius: 24px;
-    border: 1px solid var(--border-glass);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    border-radius: 8px;
+    border: 2px solid var(--border-main);
+    background: var(--bg-card);
+    box-shadow: 4px 4px 0px var(--border-main);
   }
   
   .hero-content {
@@ -510,10 +513,9 @@
   }
   
   .logo {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    box-shadow: 0 0 15px rgba(14, 165, 233, 0.4);
+    width: 64px;
+    height: 64px;
+    image-rendering: pixelated; /* good for pixel art */
   }
 
   .hero h1 {
@@ -521,87 +523,131 @@
     font-size: 2.2rem;
     font-weight: 800;
     letter-spacing: -0.05em;
-    background: linear-gradient(135deg, #38bdf8, #d946ef);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-main);
+    text-transform: uppercase;
   }
 
-  /* ---- GLASSMORPHISM ---- */
+  /* ---- FLAT CARD ---- */
   .glass {
-    background: var(--bg-glass);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--border-glass);
-    border-radius: 20px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    background: var(--bg-card);
+    border: 2px solid var(--border-main);
+    border-radius: 8px;
+    box-shadow: 4px 4px 0px var(--border-main);
   }
 
   .card {
     padding: 1.5rem;
   }
 
-  /* ---- PANEL STYLES ---- */
-  .panel-header {
+  /* ---- TOP TABS ---- */
+  .top-tabs {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    user-select: none;
-    margin: -0.5rem -0.5rem 0;
-    padding: 0.5rem;
-    border-radius: 12px;
-    transition: background-color 0.2s ease;
-  }
-  
-  .panel-header:hover {
-    background-color: rgba(255, 255, 255, 0.03);
-  }
-  
-  .panel-header:hover .header-title h3 {
-    color: var(--text-main);
+    gap: 1rem;
+    width: 100%;
   }
 
-  .header-title {
+  :global(.tab-btn) {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    border: 2px solid var(--border-main);
+    background: var(--bg-card);
+    box-shadow: 4px 4px 0px var(--border-main);
+    cursor: pointer;
+    transition: all 0.1s ease;
+    text-align: left;
+  }
+
+  :global(.tab-btn:hover) {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0px var(--border-main);
+    background: #e6e1d1;
+  }
+  
+  :global(.tab-btn:active) {
+    transform: translate(4px, 4px);
+    box-shadow: 0px 0px 0px var(--border-main);
+  }
+
+  :global(.tab-icon) {
+    font-size: 1.8rem;
+  }
+
+  :global(.tab-info) {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    overflow: hidden;
   }
 
-  .header-title h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    transition: color 0.2s ease;
-  }
-  
-  .header-title h3.active {
+  :global(.tab-label) {
+    font-size: 1rem;
+    font-weight: 800;
     color: var(--text-main);
   }
 
-  .header-summary {
-    font-size: 0.85rem;
+  :global(.tab-summary) {
+    font-size: 0.8rem;
     color: var(--text-muted);
-    opacity: 0.8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .chevron {
-    color: var(--text-muted);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* ---- MODAL OVERLAY ---- */
+  :global(.modal-backdrop) {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(35, 61, 49, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 1rem;
+    box-sizing: border-box;
   }
 
-  .chevron.open {
-    transform: rotate(180deg);
-  }
-  
-  .panel-content {
-    margin-top: 1.25rem;
+  :global(.modal-content) {
+    width: 100%;
+    max-width: 600px;
+    padding: 2rem;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 1.5rem;
+    background: var(--bg-card);
+    border: 2px solid var(--border-main);
+    border-radius: 4px;
+    box-shadow: 6px 6px 0px var(--border-main);
+  }
+  
+  :global(.modal-header) {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid var(--border-main);
+    padding-bottom: 1rem;
+  }
+  
+  :global(.modal-header h3) {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  
+  :global(.close-btn) {
+    min-height: 2rem;
+    padding: 0.2rem 0.6rem;
+    font-size: 1.2rem;
   }
 
   /* ---- INPUTS & BUTTONS ---- */
@@ -613,53 +659,58 @@
   input, textarea {
     font-family: inherit;
     font-size: 0.95rem;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--border-glass);
-    border-radius: 12px;
+    font-weight: 600;
+    background: #ffffff;
+    border: 2px solid var(--border-main);
+    border-radius: 4px;
     padding: 0.75rem 1rem;
     color: var(--text-main);
     width: 100%;
     box-sizing: border-box;
-    transition: all 0.2s ease;
+    transition: all 0.1s ease;
   }
   
   input:focus, textarea:focus {
     outline: none;
-    border-color: rgba(14, 165, 233, 0.5);
-    background: rgba(0, 0, 0, 0.4);
-    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.1);
+    border-color: var(--accent-orange);
+    box-shadow: 2px 2px 0px var(--accent-orange);
+    transform: translate(-2px, -2px);
   }
   
   input:disabled, textarea:disabled {
-    opacity: 0.55;
-    cursor: default;
-    filter: saturate(0.65);
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: #ebe6d8;
   }
 
   button {
     font-family: inherit;
-    border: 1px solid transparent;
-    border-radius: 6px;
+    border: 2px solid var(--border-main);
+    border-radius: 4px;
     padding: 0.4rem 0.7rem;
     min-height: 2.1rem;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 0.88rem;
     line-height: 1.1;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.05em;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.1s ease;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-    white-space: nowrap;
+    text-transform: uppercase;
+    box-shadow: 3px 3px 0px var(--border-main);
+  }
+  
+  button:active:not(:disabled) {
+    transform: translate(3px, 3px);
+    box-shadow: 0px 0px 0px var(--border-main);
   }
 
   button.primary {
-    background: linear-gradient(135deg, #148bc7, #356dd1);
-    border-color: rgba(125, 211, 252, 0.35);
-    color: white;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+    background: var(--accent-orange);
+    color: #fff;
   }
 
   button.load-model-btn {
@@ -667,48 +718,48 @@
     padding-inline: 0.7rem;
     white-space: nowrap;
     flex-shrink: 0;
-    box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.1) inset;
   }
   
   button.glow:not(:disabled):hover {
-    box-shadow: 0 8px 18px rgba(14, 165, 233, 0.22);
-    transform: translateY(-0.5px);
+    background: var(--accent-orange-hover);
   }
 
   button.ghost {
-    background: rgba(255, 255, 255, 0.02);
-    border-color: rgba(148, 163, 184, 0.24);
-    color: var(--text-muted);
-  }
-  
-  button.ghost:not(:disabled):hover {
-    background: rgba(255, 255, 255, 0.07);
-    border-color: rgba(148, 163, 184, 0.38);
+    background: var(--bg-base);
     color: var(--text-main);
   }
   
+  button.ghost:not(:disabled):hover {
+    background: #e6e1d1;
+  }
+  
   button.danger.ghost {
-    border-color: rgba(239, 68, 68, 0.35);
     color: var(--danger);
+    border-color: var(--danger);
+    box-shadow: 3px 3px 0px var(--danger);
   }
   
   button.danger.ghost:not(:disabled):hover {
-    background: rgba(239, 68, 68, 0.12);
+    background: var(--danger-muted);
   }
   
+  button.danger.ghost:active:not(:disabled) {
+    transform: translate(3px, 3px);
+    box-shadow: 0px 0px 0px var(--danger);
+  }
+
   button.danger-text {
     color: var(--danger);
   }
 
   button:disabled {
     opacity: 0.48;
-    cursor: default;
-    color: rgba(203, 213, 225, 0.65);
-    border-color: rgba(148, 163, 184, 0.18);
-    background: rgba(51, 65, 85, 0.35);
-    filter: saturate(0.6);
+    cursor: not-allowed;
     transform: none !important;
     box-shadow: none !important;
+    background: #ebe6d8 !important;
+    border-color: #a4ad9c !important;
+    color: #79857d !important;
   }
 
   .control-hint {
@@ -739,22 +790,21 @@
   }
 
   .badge-memory {
-    background: rgba(217, 70, 239, 0.15);
-    color: #f0abfc;
-    border: 1px solid rgba(217, 70, 239, 0.3);
+    background: var(--accent-orange);
+    color: #fff;
+    border: 2px solid var(--border-main);
     padding: 0.3rem;
-    border-radius: 999px;
+    border-radius: 4px;
     font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font-weight: 700;
+    letter-spacing: 0.05em;
     display: flex;
     align-items: center;
     gap: 0;
     overflow: hidden;
     white-space: nowrap;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.4);
-    animation: pulseGlow 2s infinite;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 2px 2px 0px var(--border-main);
     cursor: default;
   }
   
@@ -770,21 +820,14 @@
   .badge-text {
     max-width: 0;
     opacity: 0;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
   
   .badge-memory:hover {
     padding: 0.3rem 0.8rem 0.3rem 0.3rem;
     gap: 0.3rem;
-    background: rgba(217, 70, 239, 0.25);
-    border-color: rgba(217, 70, 239, 0.5);
-    animation: none;
-    box-shadow: 0 0 10px rgba(217, 70, 239, 0.3);
-  }
-  
-  .badge-memory:hover .badge-text {
-    max-width: 100px;
-    opacity: 1;
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0px var(--border-main);
   }
 
   /* ---- CHAT AREA ---- */
@@ -803,22 +846,22 @@
     left: 50%;
     transform: translateX(-50%);
     z-index: 10;
-    background: rgba(15, 23, 42, 0.9);
-    color: #38bdf8;
-    border: 1px solid rgba(56, 189, 248, 0.3);
-    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    border: 2px solid var(--border-main);
+    border-radius: 4px;
     min-height: 1.8rem;
     padding: 0.3rem 0.7rem;
     font-size: 0.8rem;
-    font-weight: 600;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    backdrop-filter: blur(8px);
-    transition: all 0.2s ease;
+    font-weight: 700;
+    box-shadow: 4px 4px 0px var(--border-main);
+    transition: all 0.1s ease;
   }
   .jump-btn:hover {
-    background: rgba(15, 23, 42, 1);
-    color: #7dd3fc;
-    border-color: rgba(56, 189, 248, 0.6);
+    background: var(--accent-orange);
+    color: #fff;
+    transform: translateX(-50%) translate(-2px, -2px);
+    box-shadow: 6px 6px 0px var(--border-main);
   }
 
   .chat-history {
@@ -833,17 +876,17 @@
   
   /* Custom Scrollbar */
   .chat-history::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
   }
   .chat-history::-webkit-scrollbar-track {
     background: transparent;
   }
   .chat-history::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
+    background: var(--border-main);
+    border-radius: 0px;
   }
   .chat-history::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--accent-orange);
   }
 
   .empty-state {
@@ -862,9 +905,10 @@
 
   .message {
     padding: 1rem 1.2rem;
-    border-radius: 16px;
+    border-radius: 4px;
     line-height: 1.6;
-    border: 1px solid var(--border-glass);
+    border: 2px solid var(--border-main);
+    box-shadow: 4px 4px 0px var(--border-main);
   }
   
   .message-header {
@@ -873,25 +917,25 @@
     letter-spacing: 0.05em;
     color: var(--text-muted);
     margin-bottom: 0.5rem;
+    font-weight: 700;
   }
 
   .message.user {
     background: var(--msg-user);
+    color: #fff;
     align-self: flex-end;
     max-width: 80%;
-    border-bottom-right-radius: 4px;
-    border-color: rgba(14, 165, 233, 0.2);
   }
   
   .message.user .message-header {
-    color: #7dd3fc;
+    color: #fff;
+    opacity: 0.8;
   }
 
   .message.assistant {
     background: var(--msg-assistant);
     align-self: flex-start;
     max-width: 90%;
-    border-bottom-left-radius: 4px;
   }
 
   .message pre {

@@ -30,7 +30,7 @@
   
   let mcpError = '';
   let isLoading = false;
-  let isMcpPanelOpen = false;
+  let isMcpModalOpen = false;
 
   $: activeConnections = Object.values(connectionStatuses).filter(s => s.connected);
   $: totalTools = activeConnections.reduce((sum, s) => sum + s.discovered_tool_count, 0);
@@ -175,180 +175,95 @@
   });
 </script>
 
-<section class="card glass mcp-panel slide-up">
+<button class="ghost tab-btn" on:click={() => isMcpModalOpen = true}>
+  <span class="tab-icon">🔫</span>
+  <div class="tab-info">
+    <span class="tab-label">MCP Connectors</span>
+    <span class="tab-summary">{summaryText}</span>
+  </div>
+</button>
+
+{#if isMcpModalOpen}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="mcp-header" on:click={() => isMcpPanelOpen = !isMcpPanelOpen}>
-    <div class="header-left">
-      <div class="badge-mcp" title="Model Context Protocol Configuration">
-        <span class="badge-icon">🔌</span>
+  <div class="modal-backdrop fade-in" on:click={() => isMcpModalOpen = false}>
+    <div class="modal-content slide-up" on:click|stopPropagation>
+      <div class="modal-header">
+        <h3>MCP Tool Connectors</h3>
+        <button class="ghost action-btn" on:click={() => isMcpModalOpen = false}>✕</button>
       </div>
-      <div class="header-title">
-        <h3 class:active={isMcpPanelOpen}>MCP Tool Connectors</h3>
-        {#if !isMcpPanelOpen}
-          <span class="header-summary fade-in">{summaryText}</span>
-        {/if}
-      </div>
-    </div>
-    <div class="chevron" class:open={isMcpPanelOpen}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-    </div>
-  </div>
 
-  {#if isMcpPanelOpen}
-    <div class="mcp-content" transition:slide|local={{ duration: 250 }}>
-      <div class="add-connector-form">
-        <div class="input-group">
-          <input 
-            bind:value={newId} 
-            placeholder="Identifier (e.g. 'fs')" 
-            disabled={busy || isLoading} 
-            class="small-input"
-          />
-          <input 
-            bind:value={newCommand} 
-            placeholder="Command (e.g. 'npx')" 
-            disabled={busy || isLoading} 
-            class="small-input cmd-input"
-          />
-          <input 
-            bind:value={newArgs} 
-            placeholder="Args (space sep) '-y @...'" 
-            disabled={busy || isLoading} 
-            class="small-input"
-          />
-          <button class="primary glow btn-add" on:click={addConnector} disabled={busy || isLoading || !newId.trim() || !newCommand.trim()}>
-            Add
-          </button>
+      <div class="mcp-content">
+        <div class="add-connector-form">
+          <div class="input-group">
+            <input 
+              bind:value={newId} 
+              placeholder="Identifier (e.g. 'fs')" 
+              disabled={busy || isLoading} 
+              class="small-input"
+            />
+            <input 
+              bind:value={newCommand} 
+              placeholder="Command (e.g. 'npx')" 
+              disabled={busy || isLoading} 
+              class="small-input cmd-input"
+            />
+            <input 
+              bind:value={newArgs} 
+              placeholder="Args (space sep) '-y @...'" 
+              disabled={busy || isLoading} 
+              class="small-input"
+            />
+            <button class="primary glow btn-add" on:click={addConnector} disabled={busy || isLoading || !newId.trim() || !newCommand.trim()}>
+              Add
+            </button>
+          </div>
+        </div>
+
+        {#if mcpError}
+          <p class="error-text slide-up">{mcpError}</p>
+        {/if}
+
+        <div class="connectors-list">
+          {#if connectors.length === 0}
+            <p class="empty-list">No MCP connectors configured.</p>
+          {:else}
+            {#each connectors as connector (connector.id)}
+              <div class="connector-item">
+                <div class="connector-info">
+                  <span class="connector-id">{connector.id}</span>
+                  <span class="connector-cmd mono">
+                    {connector.command} {connector.args.join(' ')}
+                  </span>
+                </div>
+                <div class="connector-actions">
+                  {#if connectionStatuses[connector.id]?.connected}
+                    <span class="tool-count badge-success">
+                      {connectionStatuses[connector.id].discovered_tool_count} tools
+                    </span>
+                    <button class="danger ghost btn-small" on:click={() => disconnectMcp(connector.id)} disabled={busy || isLoading}>
+                      Disconnect
+                    </button>
+                  {:else}
+                    <button class="primary ghost btn-small" on:click={() => connectMcp(connector.id)} disabled={busy || isLoading || !activeModelId}>
+                      Connect
+                    </button>
+                    <button class="ghost action-btn btn-small" on:click={() => removeConnector(connector.id)} disabled={busy || isLoading}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          {/if}
         </div>
       </div>
-
-      {#if mcpError}
-        <p class="error-text slide-up">{mcpError}</p>
-      {/if}
-
-      <div class="connectors-list">
-        {#if connectors.length === 0}
-          <p class="empty-list">No MCP connectors configured.</p>
-        {:else}
-          {#each connectors as connector (connector.id)}
-            <div class="connector-item">
-              <div class="connector-info">
-                <span class="connector-id">{connector.id}</span>
-                <span class="connector-cmd mono">
-                  {connector.command} {connector.args.join(' ')}
-                </span>
-              </div>
-              <div class="connector-actions">
-                {#if connectionStatuses[connector.id]?.connected}
-                  <span class="tool-count badge-success">
-                    {connectionStatuses[connector.id].discovered_tool_count} tools
-                  </span>
-                  <button class="danger ghost btn-small" on:click={() => disconnectMcp(connector.id)} disabled={busy || isLoading}>
-                    Disconnect
-                  </button>
-                {:else}
-                  <button class="primary ghost btn-small" on:click={() => connectMcp(connector.id)} disabled={busy || isLoading || !activeModelId}>
-                    Connect
-                  </button>
-                  <button class="ghost action-btn btn-small" on:click={() => removeConnector(connector.id)} disabled={busy || isLoading}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                  </button>
-                {/if}
-              </div>
-            </div>
-          {/each}
-        {/if}
-      </div>
     </div>
-  {/if}
-</section>
+  </div>
+{/if}
 
 <style>
-  .mcp-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1.25rem 1.5rem;
-  }
-
-  .mcp-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    user-select: none;
-    margin: -0.5rem -0.5rem 0;
-    padding: 0.5rem;
-    border-radius: 12px;
-    transition: background-color 0.2s ease;
-  }
-  
-  .mcp-header:hover {
-    background-color: rgba(255, 255, 255, 0.03);
-  }
-
-  .mcp-header:hover .header-title h3 {
-    color: var(--text-main);
-  }
-
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .header-title {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-
-  .header-title h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    transition: color 0.2s ease;
-  }
-  
-  .header-title h3.active {
-    color: var(--text-main);
-  }
-
-  .header-summary {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    opacity: 0.8;
-  }
-
-  .chevron {
-    color: var(--text-muted);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .chevron.open {
-    transform: rotate(180deg);
-  }
-
-  .badge-mcp {
-    background: rgba(14, 165, 233, 0.15);
-    border: 1px solid rgba(14, 165, 233, 0.3);
-    padding: 0.3rem;
-    border-radius: 999px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    box-sizing: border-box;
-  }
-
   .mcp-content {
-    margin-top: 1.25rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -373,37 +288,45 @@
   input {
     flex: 1;
     font-family: inherit;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--border-glass);
-    border-radius: 8px;
+    font-weight: 600;
+    background: #ffffff;
+    border: 2px solid var(--border-main);
+    border-radius: 4px;
     color: var(--text-main);
-    transition: all 0.2s ease;
+    transition: all 0.1s ease;
   }
 
   input:focus {
     outline: none;
-    border-color: rgba(14, 165, 233, 0.5);
-    background: rgba(0, 0, 0, 0.4);
-    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.1);
+    border-color: var(--accent-orange);
+    box-shadow: 2px 2px 0px var(--accent-orange);
+    transform: translate(-2px, -2px);
   }
 
   input:disabled {
-    opacity: 0.55;
-    cursor: default;
-    filter: saturate(0.65);
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: #ebe6d8;
   }
 
   button {
     font-family: inherit;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    font-weight: 600;
+    border: 2px solid var(--border-main);
+    border-radius: 4px;
+    font-weight: 700;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.1s ease;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
+    text-transform: uppercase;
+    box-shadow: 3px 3px 0px var(--border-main);
+  }
+  
+  button:active:not(:disabled) {
+    transform: translate(3px, 3px);
+    box-shadow: 0px 0px 0px var(--border-main);
   }
   
   .btn-add {
@@ -416,49 +339,66 @@
     padding: 0.3rem 0.6rem;
     font-size: 0.75rem;
     min-height: 24px;
+    box-shadow: 2px 2px 0px var(--border-main);
+  }
+  
+  .btn-small:active:not(:disabled) {
+    transform: translate(2px, 2px);
+    box-shadow: 0px 0px 0px var(--border-main);
   }
 
   .primary {
-    background: linear-gradient(135deg, #148bc7, #356dd1);
-    color: white;
+    background: var(--accent-orange);
+    color: #fff;
   }
 
   .ghost {
-    background: rgba(255, 255, 255, 0.02);
-    border-color: rgba(148, 163, 184, 0.24);
+    background: var(--bg-base);
     color: var(--text-main);
   }
 
-  .primary.ghost {
-    color: #38bdf8;
-    border-color: rgba(56, 189, 248, 0.3);
+  .ghost:not(:disabled):hover {
+    background: #e6e1d1;
   }
 
-  .primary.ghost:hover:not(:disabled) {
-    background: rgba(56, 189, 248, 0.1);
-    border-color: rgba(56, 189, 248, 0.5);
+  .primary.ghost {
+    background: var(--bg-base);
+    color: var(--accent-orange);
+    border-color: var(--accent-orange);
+    box-shadow: 2px 2px 0px var(--accent-orange);
+  }
+
+  .primary.ghost:not(:disabled):hover {
+    background: #faeade;
   }
 
   .danger.ghost {
-    color: #ef4444;
-    border-color: rgba(239, 68, 68, 0.3);
+    color: var(--danger);
+    border-color: var(--danger);
+    box-shadow: 2px 2px 0px var(--danger);
   }
   
-  .danger.ghost:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.5);
+  .danger.ghost:not(:disabled):hover {
+    background: var(--danger-muted);
+  }
+  
+  .danger.ghost:active:not(:disabled) {
+    transform: translate(2px, 2px);
+    box-shadow: 0px 0px 0px var(--danger);
   }
 
   button:disabled {
     opacity: 0.48;
-    cursor: default;
+    cursor: not-allowed;
     transform: none !important;
     box-shadow: none !important;
+    background: #ebe6d8 !important;
+    border-color: #a4ad9c !important;
+    color: #79857d !important;
   }
 
   .glow:hover:not(:disabled) {
-    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
-    transform: translateY(-0.5px);
+    background: var(--accent-orange-hover);
   }
 
   .error-text {
@@ -478,17 +418,17 @@
 
   /* Custom Scrollbar */
   .connectors-list::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
   }
   .connectors-list::-webkit-scrollbar-track {
     background: transparent;
   }
   .connectors-list::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
+    background: var(--border-main);
+    border-radius: 0px;
   }
   .connectors-list::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--accent-orange);
   }
 
   .empty-list {
@@ -503,10 +443,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: #ffffff;
+    border: 2px solid var(--border-main);
+    box-shadow: 2px 2px 0px var(--border-main);
     padding: 0.5rem 0.75rem;
-    border-radius: 8px;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
   }
 
   .connector-info {
@@ -517,14 +459,14 @@
   }
 
   .connector-id {
-    font-weight: 600;
+    font-weight: 700;
     font-size: 0.9rem;
-    color: #e2e8f0;
+    color: var(--text-main);
   }
 
   .connector-cmd {
     font-size: 0.75rem;
-    color: #94a3b8;
+    color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -538,13 +480,14 @@
   }
 
   .badge-success {
-    background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    background: #d4edda;
+    color: #155724;
+    border: 2px solid #155724;
     font-size: 0.7rem;
     padding: 0.15rem 0.4rem;
     border-radius: 4px;
     white-space: nowrap;
+    font-weight: 700;
   }
 
   .mono {

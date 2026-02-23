@@ -528,14 +528,14 @@
   }
 
   /* ---- FLAT CARD ---- */
-  .glass {
+  :global(.glass) {
     background: var(--bg-card);
     border: 2px solid var(--border-main);
     border-radius: 8px;
     box-shadow: 4px 4px 0px var(--border-main);
   }
 
-  .card {
+  :global(.card) {
     padding: 1.5rem;
   }
 
@@ -1121,9 +1121,9 @@
     display: none; /* Hide the outer level cursor if inner level is active */
   }
 
-  .fade-in { animation: fadeIn 0.4s ease-out forwards; }
-  .slide-up { animation: slideUp 0.3s ease-out forwards; }
-  .pulse-badge { animation: pulseGlow 2s infinite; }
+  :global(.fade-in) { animation: fadeIn 0.4s ease-out forwards; }
+  :global(.slide-up) { animation: slideUp 0.3s ease-out forwards; }
+  :global(.pulse-badge) { animation: pulseGlow 2s infinite; }
 
   @keyframes blink {
     0%, 100% { opacity: 1; }

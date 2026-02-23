@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from 'svelte';
+  import { slide } from 'svelte/transition';
 
   export let activeModelId: string | null = null;
   export let busy = false;
@@ -29,6 +30,13 @@
   
   let mcpError = '';
   let isLoading = false;
+  let isMcpPanelOpen = false;
+
+  $: activeConnections = Object.values(connectionStatuses).filter(s => s.connected);
+  $: totalTools = activeConnections.reduce((sum, s) => sum + s.discovered_tool_count, 0);
+  $: summaryText = activeConnections.length > 0 
+    ? `${activeConnections.length} server(s), ${totalTools} tool(s)` 
+    : (connectors.length > 0 ? `${connectors.length} configured` : '0 connectors');
 
   async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     const res = await fetch(input, init);
@@ -168,78 +176,92 @@
 </script>
 
 <section class="card glass mcp-panel slide-up">
-  <div class="mcp-header">
-    <h3>MCP Tool Connectors</h3>
-    <div class="badge-mcp" title="Model Context Protocol Configuration">
-      <span class="badge-icon">🔌</span>
-    </div>
-  </div>
-
-  <div class="mcp-content">
-    <div class="add-connector-form">
-      <div class="input-group">
-        <input 
-          bind:value={newId} 
-          placeholder="Identifier (e.g. 'fs')" 
-          disabled={busy || isLoading} 
-          class="small-input"
-        />
-        <input 
-          bind:value={newCommand} 
-          placeholder="Command (e.g. 'npx')" 
-          disabled={busy || isLoading} 
-          class="small-input cmd-input"
-        />
-        <input 
-          bind:value={newArgs} 
-          placeholder="Args (space sep) '-y @...'" 
-          disabled={busy || isLoading} 
-          class="small-input"
-        />
-        <button class="primary glow btn-add" on:click={addConnector} disabled={busy || isLoading || !newId.trim() || !newCommand.trim()}>
-          Add
-        </button>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="mcp-header" on:click={() => isMcpPanelOpen = !isMcpPanelOpen}>
+    <div class="header-left">
+      <div class="badge-mcp" title="Model Context Protocol Configuration">
+        <span class="badge-icon">🔌</span>
+      </div>
+      <div class="header-title">
+        <h3 class:active={isMcpPanelOpen}>MCP Tool Connectors</h3>
+        {#if !isMcpPanelOpen}
+          <span class="header-summary fade-in">{summaryText}</span>
+        {/if}
       </div>
     </div>
-
-    {#if mcpError}
-      <p class="error-text slide-up">{mcpError}</p>
-    {/if}
-
-    <div class="connectors-list">
-      {#if connectors.length === 0}
-        <p class="empty-list">No MCP connectors configured.</p>
-      {:else}
-        {#each connectors as connector (connector.id)}
-          <div class="connector-item">
-            <div class="connector-info">
-              <span class="connector-id">{connector.id}</span>
-              <span class="connector-cmd mono">
-                {connector.command} {connector.args.join(' ')}
-              </span>
-            </div>
-            <div class="connector-actions">
-              {#if connectionStatuses[connector.id]?.connected}
-                <span class="tool-count badge-success">
-                  {connectionStatuses[connector.id].discovered_tool_count} tools
-                </span>
-                <button class="danger ghost btn-small" on:click={() => disconnectMcp(connector.id)} disabled={busy || isLoading}>
-                  Disconnect
-                </button>
-              {:else}
-                <button class="primary ghost btn-small" on:click={() => connectMcp(connector.id)} disabled={busy || isLoading || !activeModelId}>
-                  Connect
-                </button>
-                <button class="ghost action-btn btn-small" on:click={() => removeConnector(connector.id)} disabled={busy || isLoading}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                </button>
-              {/if}
-            </div>
-          </div>
-        {/each}
-      {/if}
+    <div class="chevron" class:open={isMcpPanelOpen}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
     </div>
   </div>
+
+  {#if isMcpPanelOpen}
+    <div class="mcp-content" transition:slide|local={{ duration: 250 }}>
+      <div class="add-connector-form">
+        <div class="input-group">
+          <input 
+            bind:value={newId} 
+            placeholder="Identifier (e.g. 'fs')" 
+            disabled={busy || isLoading} 
+            class="small-input"
+          />
+          <input 
+            bind:value={newCommand} 
+            placeholder="Command (e.g. 'npx')" 
+            disabled={busy || isLoading} 
+            class="small-input cmd-input"
+          />
+          <input 
+            bind:value={newArgs} 
+            placeholder="Args (space sep) '-y @...'" 
+            disabled={busy || isLoading} 
+            class="small-input"
+          />
+          <button class="primary glow btn-add" on:click={addConnector} disabled={busy || isLoading || !newId.trim() || !newCommand.trim()}>
+            Add
+          </button>
+        </div>
+      </div>
+
+      {#if mcpError}
+        <p class="error-text slide-up">{mcpError}</p>
+      {/if}
+
+      <div class="connectors-list">
+        {#if connectors.length === 0}
+          <p class="empty-list">No MCP connectors configured.</p>
+        {:else}
+          {#each connectors as connector (connector.id)}
+            <div class="connector-item">
+              <div class="connector-info">
+                <span class="connector-id">{connector.id}</span>
+                <span class="connector-cmd mono">
+                  {connector.command} {connector.args.join(' ')}
+                </span>
+              </div>
+              <div class="connector-actions">
+                {#if connectionStatuses[connector.id]?.connected}
+                  <span class="tool-count badge-success">
+                    {connectionStatuses[connector.id].discovered_tool_count} tools
+                  </span>
+                  <button class="danger ghost btn-small" on:click={() => disconnectMcp(connector.id)} disabled={busy || isLoading}>
+                    Disconnect
+                  </button>
+                {:else}
+                  <button class="primary ghost btn-small" on:click={() => connectMcp(connector.id)} disabled={busy || isLoading || !activeModelId}>
+                    Connect
+                  </button>
+                  <button class="ghost action-btn btn-small" on:click={() => removeConnector(connector.id)} disabled={busy || isLoading}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  </button>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        {/if}
+      </div>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -254,16 +276,62 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--border-glass);
-    padding-bottom: 0.75rem;
-    margin-bottom: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+    margin: -0.5rem -0.5rem 0;
+    padding: 0.5rem;
+    border-radius: 12px;
+    transition: background-color 0.2s ease;
+  }
+  
+  .mcp-header:hover {
+    background-color: rgba(255, 255, 255, 0.03);
   }
 
-  .mcp-header h3 {
+  .mcp-header:hover .header-title h3 {
+    color: var(--text-main);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .header-title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .header-title h3 {
     margin: 0;
     font-size: 1.1rem;
     font-weight: 600;
+    color: var(--text-muted);
+    transition: color 0.2s ease;
+  }
+  
+  .header-title h3.active {
     color: var(--text-main);
+  }
+
+  .header-summary {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    opacity: 0.8;
+  }
+
+  .chevron {
+    color: var(--text-muted);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .chevron.open {
+    transform: rotate(180deg);
   }
 
   .badge-mcp {
@@ -280,6 +348,7 @@
   }
 
   .mcp-content {
+    margin-top: 1.25rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;

@@ -2,6 +2,7 @@
   import { metricsSummary, usageSummary } from './lib/chat_format';
   import { renderAssistantMarkdown } from './lib/markdown_render';
   import { tick } from 'svelte';
+  import { slide } from 'svelte/transition';
   
   import McpPanel from './McpPanel.svelte';
 
@@ -45,6 +46,7 @@
   let activeModelId: string | null = null;
   let busy = false;
   let apiError = '';
+  let isModelPanelOpen = true;
 
   // Chat State
   type ChatMessage = { role: 'user' | 'assistant'; content: string };
@@ -301,30 +303,54 @@
 
   <!-- Model loading / unloading -->
   <section class="card model-controls glass">
-    <div class="model-input-row">
-      <input 
-        bind:value={modelPath} 
-        placeholder="/absolute/path/to/model.gguf" 
-        disabled={busy || activeModelId !== null} 
-      />
-      {#if !activeModelId}
-        <button class="primary glow load-model-btn" on:click={loadAndSelectModel} disabled={busy || !modelPath.trim()}>
-          <span>Load Model</span>
-        </button>
-      {:else}
-        <button class="danger ghost" on:click={unloadModel} disabled={busy}>Unload</button>
-      {/if}
-    </div>
-    {#if !activeModelId}
-      <p class="control-hint">Load a model to enable chat controls.</p>
-    {/if}
-    {#if activeModelId}
-      <div class="active-status-row fade-in">
-        <p class="status-text">Active model: <span class="mono accent-text">{activeModelId}</span></p>
-        <div class="badge-memory" title="Long-term context database is active">
-          <span class="badge-icon">🧠</span>
-          <span class="badge-text">Memory Active</span>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <header class="panel-header" on:click={() => isModelPanelOpen = !isModelPanelOpen}>
+      <div class="header-title">
+        <h3 class:active={isModelPanelOpen}>Model Configuration</h3>
+        {#if !isModelPanelOpen}
+          <span class="header-summary fade-in">
+            {#if activeModelId}
+              Active: <span class="mono accent-text">{activeModelId}</span>
+            {:else}
+              No model loaded
+            {/if}
+          </span>
+        {/if}
+      </div>
+      <div class="chevron" class:open={isModelPanelOpen}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+    </header>
+
+    {#if isModelPanelOpen}
+      <div class="panel-content" transition:slide|local={{ duration: 250 }}>
+        <div class="model-input-row">
+          <input 
+            bind:value={modelPath} 
+            placeholder="/absolute/path/to/model.gguf" 
+            disabled={busy || activeModelId !== null} 
+          />
+          {#if !activeModelId}
+            <button class="primary glow load-model-btn" on:click={loadAndSelectModel} disabled={busy || !modelPath.trim()}>
+              <span>Load Model</span>
+            </button>
+          {:else}
+            <button class="danger ghost" on:click={unloadModel} disabled={busy}>Unload</button>
+          {/if}
         </div>
+        {#if !activeModelId}
+          <p class="control-hint">Load a model to enable chat controls.</p>
+        {/if}
+        {#if activeModelId}
+          <div class="active-status-row fade-in">
+            <p class="status-text">Active model: <span class="mono accent-text">{activeModelId}</span></p>
+            <div class="badge-memory" title="Long-term context database is active">
+              <span class="badge-icon">🧠</span>
+              <span class="badge-text">Memory Active</span>
+            </div>
+          </div>
+        {/if}
       </div>
     {/if}
   </section>
@@ -512,6 +538,70 @@
 
   .card {
     padding: 1.5rem;
+  }
+
+  /* ---- PANEL STYLES ---- */
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    margin: -0.5rem -0.5rem 0;
+    padding: 0.5rem;
+    border-radius: 12px;
+    transition: background-color 0.2s ease;
+  }
+  
+  .panel-header:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+  
+  .panel-header:hover .header-title h3 {
+    color: var(--text-main);
+  }
+
+  .header-title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .header-title h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: color 0.2s ease;
+  }
+  
+  .header-title h3.active {
+    color: var(--text-main);
+  }
+
+  .header-summary {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    opacity: 0.8;
+  }
+
+  .chevron {
+    color: var(--text-muted);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .chevron.open {
+    transform: rotate(180deg);
+  }
+  
+  .panel-content {
+    margin-top: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 
   /* ---- INPUTS & BUTTONS ---- */

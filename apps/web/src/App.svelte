@@ -638,7 +638,7 @@
     background: #ebe6d8;
   }
 
-  input, textarea {
+  textarea {
     font-family: inherit;
     font-size: 0.95rem;
     font-weight: 600;
@@ -652,14 +652,14 @@
     transition: all 0.1s ease;
   }
   
-  input:focus, textarea:focus {
+  textarea:focus {
     outline: none;
     border-color: var(--accent-orange);
     box-shadow: 2px 2px 0px var(--accent-orange);
     transform: translate(-2px, -2px);
   }
   
-  input:disabled, textarea:disabled {
+  textarea:disabled {
     opacity: 0.6;
     cursor: not-allowed;
     background: #ebe6d8;

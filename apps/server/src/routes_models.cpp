@@ -70,9 +70,10 @@ void register_model_routes(RuntimeState &runtime_state) {
                        std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
         LOG_INFO << "Selecting model";
         std::string model_id;
+        std::optional<int> context_size;
         Json::Value details(Json::objectValue);
         if (const auto parse_error =
-                parse_model_select_request(req->getJsonObject(), model_id, details);
+                parse_model_select_request(req->getJsonObject(), model_id, context_size, details);
             parse_error.has_value()) {
           LOG_ERROR << "Failed to parse model select request: " << *parse_error;
           write_error(req, std::move(cb), drogon::k400BadRequest, "APP-VAL-001",
@@ -82,7 +83,7 @@ void register_model_routes(RuntimeState &runtime_state) {
 
         std::string error_code;
         std::string error_message;
-        const auto model = runtime_state.select_model(model_id, error_code, error_message);
+        const auto model = runtime_state.select_model(model_id, context_size, error_code, error_message);
         if (!model.has_value()) {
           LOG_ERROR << "Failed to select model " << model_id << ": " << error_message;
           auto status = drogon::k409Conflict;

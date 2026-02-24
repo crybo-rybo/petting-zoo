@@ -56,6 +56,7 @@ RuntimeState::RuntimeState(RuntimeConfig config) : config_(std::move(config)) {
       model.display_name = entry.path().filename().string();
       model.path = entry.path().string();
       model.status = "available";
+      model.file_size_bytes = entry.file_size();
       models_[model.id] = model;
     }
   }
@@ -129,11 +130,13 @@ std::optional<ModelEntry> RuntimeState::register_model(
   model.display_name = display_name;
   model.path = model_path.string();
   model.status = "available";
+  model.file_size_bytes = fs::file_size(model_path);
   models_[model.id] = model;
   return model;
 }
 
 std::optional<ModelEntry> RuntimeState::select_model(const std::string &model_id,
+                                                     std::optional<int> context_size_override,
                                                      std::string &error_code,
                                                      std::string &error_message) {
   ModelEntry selected;
@@ -154,9 +157,11 @@ std::optional<ModelEntry> RuntimeState::select_model(const std::string &model_id
     return std::nullopt;
   }
 
+  const int ctx_size = context_size_override.value_or(selected.context_size);
+
   zoo::Config config;
   config.model_path = selected.path;
-  config.context_size = selected.context_size;
+  config.context_size = ctx_size;
   config.max_tokens = 512;
 
   auto created = zoo::Agent::create(config);

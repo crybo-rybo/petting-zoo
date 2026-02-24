@@ -43,9 +43,25 @@
     };
   }
 
+  // Context size options
+  const CONTEXT_SIZE_OPTIONS = [
+    { value: 512, label: '512' },
+    { value: 1024, label: '1K' },
+    { value: 2048, label: '2K' },
+    { value: 4096, label: '4K' },
+    { value: 8192, label: '8K' },
+  ];
+
+  function formatFileSize(bytes: number): string {
+    if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
+    if (bytes >= 1e6) return (bytes / 1e6).toFixed(0) + ' MB';
+    return (bytes / 1e3).toFixed(0) + ' KB';
+  }
+
   // State
   let availableModels: ModelSummary[] = [];
   let selectedModelId = '';
+  let selectedContextSize = 2048;
   let activeModelId: string | null = null;
   let busy = false;
   let apiError = '';
@@ -124,7 +140,7 @@
     chatError = '';
     busy = true;
     try {
-      const selResp = await selectModel(selectedModelId);
+      const selResp = await selectModel(selectedModelId, selectedContextSize);
       activeModelId = selResp.active_model.id;
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
@@ -297,7 +313,7 @@
                 <select bind:value={selectedModelId} disabled={busy} class="model-select">
                   {#each availableModels as model (model.id)}
                     <option value={model.id} disabled={model.status === 'unavailable'}>
-                      {model.display_name ?? model.id}{model.status === 'unavailable' ? ' (unavailable)' : ''}
+                      {model.display_name ?? model.id}{model.status === 'unavailable' ? ' (unavailable)' : ''}{model.file_size_bytes ? ` (${formatFileSize(model.file_size_bytes)})` : ''}
                     </option>
                   {/each}
                 </select>
@@ -307,7 +323,15 @@
               {/if}
             </div>
             {#if availableModels.length > 0}
-              <p class="control-hint">Select a model and click Load to enable chat.</p>
+              <div class="context-size-row">
+                <label class="context-label" for="ctx-size">Context Window:</label>
+                <select id="ctx-size" bind:value={selectedContextSize} disabled={busy} class="context-select">
+                  {#each CONTEXT_SIZE_OPTIONS as opt (opt.value)}
+                    <option value={opt.value}>{opt.label} tokens</option>
+                  {/each}
+                </select>
+              </div>
+              <p class="control-hint">Larger context uses more memory. Reduce if model loading fails with OOM.</p>
             {/if}
           {/if}
         </div>
@@ -633,6 +657,46 @@
   }
 
   select.model-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: #ebe6d8;
+  }
+
+  .context-size-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .context-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  select.context-select {
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: #ffffff;
+    border: 2px solid var(--border-main);
+    border-radius: 4px;
+    padding: 0.4rem 0.6rem;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.1s ease;
+    appearance: auto;
+  }
+
+  select.context-select:focus {
+    outline: none;
+    border-color: var(--accent-orange);
+    box-shadow: 2px 2px 0px var(--accent-orange);
+  }
+
+  select.context-select:disabled {
     opacity: 0.6;
     cursor: not-allowed;
     background: #ebe6d8;

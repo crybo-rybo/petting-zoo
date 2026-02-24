@@ -18,7 +18,8 @@ struct ModelEntry {
   std::string display_name;
   std::string path;
   std::string status = "available";
-  int context_size = 8192;
+  int context_size = 2048;
+  std::uintmax_t file_size_bytes = 0;
 };
 
 struct ParsedModelRegisterRequest {
@@ -55,6 +56,7 @@ class RuntimeState {
                                            std::string &error_message);
 
   std::optional<ModelEntry> select_model(const std::string &model_id,
+                                         std::optional<int> context_size_override,
                                          std::string &error_code,
                                          std::string &error_message);
 

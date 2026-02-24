@@ -7,5 +7,6 @@ Json::Value model_to_json(const ModelEntry &model) {
   out["path"] = model.path;
   out["status"] = model.status;
   out["context_size"] = model.context_size;
+  out["file_size_bytes"] = static_cast<Json::UInt64>(model.file_size_bytes);
   return out;
 }

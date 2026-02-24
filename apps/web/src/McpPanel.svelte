@@ -1,24 +1,10 @@
 <script lang="ts">
-  import { onMount, createEventDispatcher } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { onMount } from 'svelte';
+  import { addMcpConnector, connectMcpConnector, disconnectMcpConnector, listMcpConnectors, removeMcpConnector } from './features/mcp/service';
+  import type { McpConnectionStatus, McpConnector } from './shared/api/types';
 
   export let activeModelId: string | null = null;
   export let busy = false;
-
-  const dispatch = createEventDispatcher();
-
-  // Types
-  type McpConnector = {
-    id: string;
-    command: string;
-    args: string[];
-  };
-
-  type McpConnectionStatus = {
-    server_id: string;
-    connected: boolean;
-    discovered_tool_count: number;
-  };
 
   // State
   let connectors: McpConnector[] = [];
@@ -38,27 +24,10 @@
     ? `${activeConnections.length} server(s), ${totalTools} tool(s)` 
     : (connectors.length > 0 ? `${connectors.length} configured` : '0 connectors');
 
-  async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-    const res = await fetch(input, init);
-    if (!res.ok) {
-      let message = `status ${res.status}`;
-      try {
-        const body = await res.json();
-        if (body?.error?.message) {
-          message = body.error.message;
-        }
-      } catch {
-        // Fallback to status text
-      }
-      throw new Error(message);
-    }
-    return (await res.json()) as T;
-  }
-
   async function loadConnectors() {
     try {
       mcpError = '';
-      const data = await requestJson<{ connectors: McpConnector[] }>('/api/mcp/connectors');
+      const data = await listMcpConnectors();
       connectors = data.connectors || [];
     } catch (e) {
       mcpError = e instanceof Error ? e.message : 'Failed to load MCP connectors';
@@ -76,14 +45,10 @@
         .map(a => a.trim())
         .filter(a => a.length > 0);
 
-      const added = await requestJson<McpConnector>('/api/mcp/connectors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: newId.trim(),
-          command: newCommand.trim(),
-          args: argsArray
-        })
+      const added = await addMcpConnector({
+        id: newId.trim(),
+        command: newCommand.trim(),
+        args: argsArray,
       });
 
       connectors = [...connectors, added];
@@ -103,9 +68,7 @@
       isLoading = true;
       mcpError = '';
       
-      await requestJson(`/api/mcp/connectors/${encodeURIComponent(id)}`, {
-        method: 'DELETE'
-      });
+      await removeMcpConnector(id);
       
       connectors = connectors.filter(c => c.id !== id);
       const newStatuses = { ...connectionStatuses };
@@ -128,9 +91,7 @@
       isLoading = true;
       mcpError = '';
       
-      const status = await requestJson<McpConnectionStatus>(`/api/mcp/connectors/${encodeURIComponent(id)}/connect`, {
-        method: 'POST'
-      });
+      const status = await connectMcpConnector(id);
       
       connectionStatuses = {
         ...connectionStatuses,
@@ -148,9 +109,7 @@
       isLoading = true;
       mcpError = '';
       
-      await requestJson(`/api/mcp/connectors/${encodeURIComponent(id)}/disconnect`, {
-        method: 'POST'
-      });
+      await disconnectMcpConnector(id);
       
       connectionStatuses = {
         ...connectionStatuses,
@@ -248,7 +207,7 @@
                     <button class="primary ghost btn-small" on:click={() => connectMcp(connector.id)} disabled={busy || isLoading || !activeModelId}>
                       Connect
                     </button>
-                    <button class="ghost action-btn btn-small" on:click={() => removeConnector(connector.id)} disabled={busy || isLoading}>
+                    <button class="ghost action-btn btn-small" on:click={() => removeConnector(connector.id)} disabled={busy || isLoading} aria-label="Remove connector" title="Remove connector">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                     </button>
                   {/if}
@@ -271,6 +230,7 @@
 
   .input-group {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     align-items: stretch;
   }
@@ -287,6 +247,7 @@
 
   input {
     flex: 1;
+    min-width: 0;
     font-family: inherit;
     font-weight: 600;
     background: #ffffff;

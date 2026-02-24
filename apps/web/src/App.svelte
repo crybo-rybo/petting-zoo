@@ -2,9 +2,10 @@
   import { metricsSummary, usageSummary } from './lib/chat_format';
   import { renderAssistantMarkdown } from './lib/markdown_render';
   import { tick } from 'svelte';
-  import { slide } from 'svelte/transition';
-  
+
   import McpPanel from './McpPanel.svelte';
+  import { listModels, registerModel, selectModel, unloadModel as unloadSelectedModel } from './features/models/service';
+  import { clearMemory, consumeSseStream, openChatStream, resetChat as resetChatSession } from './features/chat/stream';
 
   import DOMPurify from 'dompurify';
   import 'highlight.js/styles/atom-one-dark.css';
@@ -98,28 +99,11 @@
     }
   }
 
-  async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-    const res = await fetch(input, init);
-    if (!res.ok) {
-      let message = `status ${res.status}`;
-      try {
-        const body = await res.json();
-        if (body?.error?.message) {
-          message = body.error.message;
-        }
-      } catch {
-        // Fallback to status text
-      }
-      throw new Error(message);
-    }
-    return (await res.json()) as T;
-  }
-
   async function initialize() {
     apiError = '';
     busy = true;
     try {
-      const body = await requestJson<{ active_model_id: string | null }>('/api/models');
+      const body = await listModels();
       activeModelId = body.active_model_id ?? null;
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
@@ -134,17 +118,8 @@
     chatError = '';
     busy = true;
     try {
-      const regResp = await requestJson<{ model: { id: string } }>('/api/models/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: modelPath.trim(), display_name: '' })
-      });
-      
-      const selResp = await requestJson<{ active_model: { id: string } }>('/api/models/select', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_id: regResp.model.id })
-      });
+      const regResp = await registerModel(modelPath);
+      const selResp = await selectModel(regResp.model.id);
       activeModelId = selResp.active_model.id;
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
@@ -158,7 +133,7 @@
     chatError = '';
     busy = true;
     try {
-      await requestJson<{ status: string }>('/api/models/unload', { method: 'POST' });
+      await unloadSelectedModel();
       activeModelId = null;
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
@@ -186,57 +161,25 @@
 
     try {
       const latestMessage = chatHistory[chatHistory.length - 2].content;
+      const responseBody = await openChatStream(latestMessage, abortController.signal);
 
-      const resp = await fetch('/api/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: latestMessage }),
-        signal: abortController.signal
-      });
+      await consumeSseStream(responseBody, async (event) => {
+        if (event.type === 'token' && event.content !== undefined) {
+          chatHistory[chatHistory.length - 1].content += event.content;
+          chatHistory = [...chatHistory];
 
-      if (!resp.ok) {
-        let message = `status ${resp.status}`;
-        try {
-          const body = await resp.json();
-          if (body?.error?.message) message = body.error.message;
-        } catch { /* ignore */ }
-        throw new Error(message);
-      }
-      if (!resp.body) throw new Error('No response body');
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop() ?? '';
-
-        for (const part of parts) {
-          if (!part.startsWith('data: ')) continue;
-          const event = JSON.parse(part.slice(6));
-
-          if (event.type === 'token' && event.content !== undefined) {
-             chatHistory[chatHistory.length - 1].content += event.content;
-             chatHistory = [...chatHistory]; // trigger reactivity
-             
-             if (autoScrollEnabled) {
-               await tick();
-               if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
-             }
-             checkResponsePosition();
-          } else if (event.type === 'done') {
-            if (event.usage) chatUsage = usageSummary(event.usage);
-            if (event.metrics) chatMetrics = metricsSummary(event.metrics);
-          } else if (event.type === 'error') {
-            chatError = event.message ?? event.code ?? 'error';
+          if (autoScrollEnabled) {
+            await tick();
+            if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
           }
+          checkResponsePosition();
+        } else if (event.type === 'done') {
+          if (event.usage) chatUsage = usageSummary(event.usage);
+          if (event.metrics) chatMetrics = metricsSummary(event.metrics);
+        } else if (event.type === 'error') {
+          chatError = event.message ?? event.code ?? 'error';
         }
-      }
+      });
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
         chatError = '';
@@ -262,7 +205,7 @@
     chatError = '';
     busy = true;
     try {
-      await requestJson('/api/chat/reset', { method: 'POST' });
+      await resetChatSession();
       chatHistory = [];
       chatUsage = '';
       chatMetrics = '';
@@ -279,7 +222,7 @@
     chatError = '';
     busy = true;
     try {
-      await requestJson('/api/chat/clear_memory', { method: 'POST' });
+      await clearMemory();
       chatHistory = [];
       chatUsage = '';
       chatMetrics = '';

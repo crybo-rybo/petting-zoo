@@ -32,6 +32,20 @@ if(MSVC)
   target_compile_options(petting_zoo_server PRIVATE /W4)
 else()
   target_compile_options(petting_zoo_server PRIVATE -Wall -Wextra -Wpedantic)
+  
+  # Security hardening flags for GCC/Clang
+  target_compile_options(petting_zoo_server PRIVATE
+    -fPIE
+    -fstack-protector-strong
+    $<$<CONFIG:Release>:-D_FORTIFY_SOURCE=2>
+    $<$<CONFIG:Release>:-O2>
+  )
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(petting_zoo_server PRIVATE
+      -Wl,-z,relro,-z,now
+      -pie
+    )
+  endif()
 endif()
 
 add_dependencies(petting_zoo_server petting_zoo_web_assets)

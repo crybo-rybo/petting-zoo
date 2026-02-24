@@ -4,6 +4,19 @@ add_executable(petting_zoo_cpp_sanity
 target_link_libraries(petting_zoo_cpp_sanity PRIVATE zoo)
 target_compile_features(petting_zoo_cpp_sanity PRIVATE cxx_std_20)
 
+add_executable(petting_zoo_api_tests 
+  cpp/test_api_parsers.cpp
+  ../apps/server/src/api_parsers.cpp
+)
+if(TARGET drogon)
+  target_link_libraries(petting_zoo_api_tests PRIVATE drogon zoo)
+else()
+  target_link_libraries(petting_zoo_api_tests PRIVATE Drogon::Drogon zoo)
+endif()
+target_compile_features(petting_zoo_api_tests PRIVATE cxx_std_20)
+
+add_test(NAME api_parsers_unit COMMAND petting_zoo_api_tests)
+
 add_test(NAME cpp_config_sanity COMMAND petting_zoo_cpp_sanity)
 
 find_program(_curl curl)

@@ -24,11 +24,17 @@ std::string sanitize_model_id(std::string input) {
   return input.substr(first, last - first + 1);
 }
 
-RuntimeState::RuntimeState() {
+RuntimeState::RuntimeState(RuntimeConfig config) : config_(std::move(config)) {
   auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
   if (db_result) {
     context_db_ = std::move(*db_result);
   }
+
+#ifdef ZOO_ENABLE_MCP
+  for (const auto& entry : config_.mcp_connectors) {
+    mcp_connectors_[entry.id] = entry;
+  }
+#endif
 }
 
 std::vector<ModelEntry> RuntimeState::list_models() const {
@@ -56,6 +62,23 @@ std::optional<ModelEntry> RuntimeState::register_model(
     std::string &error_message) {
   namespace fs = std::filesystem;
   const fs::path model_path = fs::path(req.path).lexically_normal();
+
+  bool is_allowed_path = false;
+  for (const auto& allowed_dir : config_.model_discovery_paths) {
+    fs::path norm_dir = fs::absolute(fs::path(allowed_dir)).lexically_normal();
+    fs::path abs_model_path = fs::absolute(model_path).lexically_normal();
+    if (abs_model_path.string().rfind(norm_dir.string(), 0) == 0) {
+      is_allowed_path = true;
+      break;
+    }
+  }
+
+  if (!is_allowed_path) {
+    error_code = "APP-SEC-403";
+    error_message = "Model path is not within an allowed directory";
+    return std::nullopt;
+  }
+
   if (!fs::exists(model_path) || !fs::is_regular_file(model_path)) {
     error_code = "APP-VAL-001";
     error_message = "Model path does not exist or is not a regular file";
@@ -206,8 +229,7 @@ std::optional<std::string> RuntimeState::reset_chat(std::string &error_code,
 }
 
 void RuntimeState::unload_model() {
-  std::lock_guard<std::mutex> lock(mu_);
-  std::lock_guard<std::mutex> agent_lock(agent_mu_);
+  std::scoped_lock lock(mu_, agent_mu_);
   agent_.reset();
   active_model_id_ = std::nullopt;
 }
@@ -258,45 +280,7 @@ std::vector<McpConnectorEntry> RuntimeState::list_mcp_connectors() const {
   return out;
 }
 
-std::optional<McpConnectorEntry> RuntimeState::add_mcp_connector(
-    const ParsedMcpConnectRequest &req, std::string &error_code,
-    std::string &error_message) {
-  std::lock_guard<std::mutex> lock(mu_);
-  if (mcp_connectors_.contains(req.id)) {
-    error_code = "APP-MCP-409";
-    error_message = "Connector ID already exists";
-    return std::nullopt;
-  }
 
-  McpConnectorEntry entry;
-  entry.id = req.id;
-  entry.config.server_id = req.id;
-  entry.config.transport.command = req.command;
-  entry.config.transport.args = req.args;
-
-  mcp_connectors_[req.id] = entry;
-  return entry;
-}
-
-bool RuntimeState::remove_mcp_connector(const std::string &id,
-                                        std::string &error_code,
-                                        std::string &error_message) {
-  std::lock_guard<std::mutex> lock(mu_);
-  if (!mcp_connectors_.contains(id)) {
-    error_code = "APP-MCP-404";
-    error_message = "Connector not found";
-    return false;
-  }
-  
-  // If we have an active agent, try to disconnect it just in case
-  if (agent_) {
-    std::lock_guard<std::mutex> agent_lock(agent_mu_);
-    (void)agent_->remove_mcp_server(id);
-  }
-
-  mcp_connectors_.erase(id);
-  return true;
-}
 
 std::optional<zoo::Agent::McpServerSummary> RuntimeState::connect_mcp_server(
     const std::string &id, std::string &error_code, std::string &error_message) {

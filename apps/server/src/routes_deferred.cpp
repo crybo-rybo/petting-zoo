@@ -8,9 +8,9 @@ namespace {
 
 void handle_deferred(const drogon::HttpRequestPtr &req,
                      std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
-  write_error(req, std::move(cb), drogon::k404NotFound, "APP-NOT-IMPL-001",
+  write_error(req, std::move(cb), drogon::k501NotImplemented, "APP-NOT-IMPL-001",
               "internal",
-              "API endpoint not implemented in MVP reset scope",
+              "API endpoint not implemented in MVP",
               false);
 }
 

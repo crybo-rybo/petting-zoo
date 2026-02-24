@@ -3,3 +3,17 @@
 
 apps/web/node_modules/
 apps/web/dist/
+
+# SQLite databases
+*.db
+*.sqlite
+
+# Large files
+*.gguf
+
+# Environment and temp
+.env
+.cache/
+tmp/
+uploads/
+*.log

@@ -35,6 +35,30 @@ RuntimeState::RuntimeState(RuntimeConfig config) : config_(std::move(config)) {
     mcp_connectors_[entry.id] = entry;
   }
 #endif
+
+  // Auto-discover and pre-register models from configured paths
+  namespace fs = std::filesystem;
+  for (const auto& dir_str : config_.model_discovery_paths) {
+    const fs::path dir_path(dir_str);
+    if (!fs::exists(dir_path) || !fs::is_directory(dir_path)) continue;
+    for (const auto& entry : fs::directory_iterator(dir_path)) {
+      if (!entry.is_regular_file()) continue;
+      if (entry.path().extension() != ".gguf") continue;
+      std::string id = sanitize_model_id(entry.path().stem().string());
+      if (id.empty()) id = "model";
+      if (models_.contains(id) && models_[id].path != entry.path().string()) {
+        int suffix = 2;
+        std::string base = id;
+        do { id = base + "-" + std::to_string(suffix++); } while (models_.contains(id));
+      }
+      ModelEntry model;
+      model.id = id;
+      model.display_name = entry.path().filename().string();
+      model.path = entry.path().string();
+      model.status = "available";
+      models_[model.id] = model;
+    }
+  }
 }
 
 std::vector<ModelEntry> RuntimeState::list_models() const {

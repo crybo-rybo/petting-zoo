@@ -7,6 +7,7 @@ export type ModelSummary = {
 };
 
 export type ListModelsResponse = {
+  models: ModelSummary[];
   active_model_id: string | null;
 };
 

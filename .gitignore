@@ -16,4 +16,5 @@ apps/web/dist/
 .cache/
 tmp/
 uploads/
+config/app.json
 *.log

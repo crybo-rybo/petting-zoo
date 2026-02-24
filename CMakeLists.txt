@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(PETTING_ZOO_BUILD_WEB "Build web assets with npm when available" ON)
+option(PETTING_ZOO_WEB_ALLOW_FALLBACK "Allow fallback static web assets when npm web build fails" OFF)
 option(PETTING_ZOO_ENABLE_MCP "Enable MCP support via zoo-keeper" ON)
 option(PETTING_ZOO_BUILD_TESTS "Build and register project tests" ON)
 

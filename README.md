@@ -37,8 +37,27 @@ Deferred contracts are preserved for future reintroduction:
 
 Notes:
 
-- By default, CMake attempts `npm ci && npm run build` in `apps/web` to produce assets.
-- If npm build fails, fallback static assets in `apps/web/fallback-dist/` are served.
+- CMake builds frontend assets into `build/web-dist` (the directory served by the backend).
+- Frontend packaging uses `npm ci` (when dependencies change) and `npm run build`.
+- By default, frontend build failures stop the build. To allow fallback assets, configure with:
+  - `cmake -S . -B build -DPETTING_ZOO_WEB_ALLOW_FALLBACK=ON`
+
+## Frontend Development Loop
+
+For iterative UI work, run Vite separately from the packaged static build:
+
+1. Start backend API server (terminal A):
+   - `cmake --build build -j --target petting_zoo_server`
+   - `./build/apps/server/petting_zoo_server`
+2. Start Vite dev server (terminal B):
+   - `npm --prefix apps/web run dev`
+3. Open:
+   - `http://127.0.0.1:5173`
+
+Notes:
+
+- Vite proxies `/api` and `/healthz` to `http://127.0.0.1:8080`.
+- This dev loop avoids stale packaged assets while editing frontend code.
 
 ## Testing
 

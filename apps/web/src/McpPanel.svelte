@@ -130,7 +130,7 @@
                       Disable
                     </button>
                   {:else}
-                    <button class="primary ghost btn-small" on:click={() => enableMcp(connector.id)} disabled={busy || isLoading || !activeModelId} title={!activeModelId ? 'Load a model first' : ''}>
+                    <button class="primary ghost btn-small" on:click={() => enableMcp(connector.id)} disabled={busy || isLoading}>
                       Enable
                     </button>
                   {/if}

@@ -5,20 +5,40 @@
 #include <drogon/drogon.h>
 
 #include <thread>
+#include <atomic>
 
 #include "api_parsers.hpp"
 #include "http_helpers.hpp"
+
+static std::atomic<int> active_chat_streams{0};
+
+void shutdown_chat_routes() {
+  if (active_chat_streams.load() > 0) {
+    LOG_INFO << "Waiting for " << active_chat_streams.load() << " active chat stream(s) to finish...";
+    const int max_wait_ms = 10000;
+    int elapsed_ms = 0;
+    while (active_chat_streams.load() > 0 && elapsed_ms < max_wait_ms) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      elapsed_ms += 100;
+    }
+    if (active_chat_streams.load() > 0) {
+      LOG_WARN << "Shutdown timeout: " << active_chat_streams.load() << " stream(s) still active, forcing exit";
+    }
+  }
+}
 
 void register_chat_routes(RuntimeState &runtime_state) {
   drogon::app().registerHandler(
       "/api/chat/complete",
       [&runtime_state](const drogon::HttpRequestPtr &req,
                        std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
+        LOG_INFO << "Executing chat complete";
         std::string message;
         Json::Value details(Json::objectValue);
         if (const auto parse_error =
                 parse_chat_complete_request(req->getJsonObject(), message, details);
             parse_error.has_value()) {
+          LOG_ERROR << "Failed to parse chat complete request: " << *parse_error;
           write_error(req, std::move(cb), drogon::k400BadRequest, "APP-VAL-001",
                       "validation", *parse_error, false, details);
           return;
@@ -28,6 +48,7 @@ void register_chat_routes(RuntimeState &runtime_state) {
         std::string error_message;
         const auto response = runtime_state.chat_complete(message, error_code, error_message);
         if (!response.has_value()) {
+          LOG_ERROR << "Failed to complete chat: " << error_message;
           const auto status = error_code == "APP-STATE-409" ? drogon::k409Conflict
                                                               : drogon::k502BadGateway;
           write_error(req, std::move(cb), status, error_code,
@@ -62,11 +83,13 @@ void register_chat_routes(RuntimeState &runtime_state) {
       "/api/chat/stream",
       [&runtime_state](const drogon::HttpRequestPtr &req,
                        std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
+        LOG_INFO << "Executing chat stream";
         std::string message;
         Json::Value details(Json::objectValue);
         if (const auto parse_error =
                 parse_chat_complete_request(req->getJsonObject(), message, details);
             parse_error.has_value()) {
+          LOG_ERROR << "Failed to parse chat complete request: " << *parse_error;
           write_error(req, std::move(cb), drogon::k400BadRequest, "APP-VAL-001",
                       "validation", *parse_error, false, details);
           return;
@@ -82,6 +105,7 @@ void register_chat_routes(RuntimeState &runtime_state) {
               // unique_ptr exclusively.
               auto ss = std::shared_ptr<drogon::ResponseStream>(std::move(stream));
 
+              active_chat_streams++;
               std::thread([&runtime_state, msg = std::move(message),
                            ss = std::move(ss)]() mutable {
                 auto token_cb = [&ss](std::string_view token) {
@@ -99,6 +123,7 @@ void register_chat_routes(RuntimeState &runtime_state) {
                     msg, std::move(token_cb), error_code, error_message);
 
                 if (!result) {
+                  LOG_ERROR << "Streaming chat failed: " << error_message;
                   Json::Value err(Json::objectValue);
                   err["type"] = "error";
                   err["code"] = error_code;
@@ -107,6 +132,7 @@ void register_chat_routes(RuntimeState &runtime_state) {
                   builder["indentation"] = "";
                   ss->send("data: " + Json::writeString(builder, err) + "\n\n");
                   ss->close();
+                  active_chat_streams--;
                   return;
                 }
 
@@ -132,6 +158,7 @@ void register_chat_routes(RuntimeState &runtime_state) {
                 builder["indentation"] = "";
                 ss->send("data: " + Json::writeString(builder, done) + "\n\n");
                 ss->close();
+                active_chat_streams--;
               }).detach();
             },
             /*disableKickoffTimeout=*/true);

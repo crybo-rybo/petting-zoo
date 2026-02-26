@@ -18,12 +18,23 @@ Implemented and supported API endpoints:
 - `POST /api/models/register`
 - `POST /api/models/select`
 - `POST /api/chat/complete`
+- `GET /api/chat/stream`
 - `POST /api/chat/reset`
+- `POST /api/chat/clear_memory`
+- `GET /api/mcp/connectors`
 
 Deferred contracts are preserved for future reintroduction:
 
-- `docs/api/openapi.future.yaml` (sessions, streaming, KB, prompts, MCP)
+- `docs/api/openapi.future.yaml` (sessions, KB, prompts)
 - `docs/api/ws-events.md` (marked deferred)
+
+## Configuration
+
+The server is configured via `config/app.json`.
+
+- **Model Loading**: For security against path traversal, models can only be registered if their absolute path falls strictly within one of the directories specified in `runtime.model_discovery_paths`.
+- **MCP Connectors**: For security against arbitrary remote code execution, MCP connectors are strictly configured via the `mcp_connectors` array. Dynamic registration via the API is disabled.
+- **Port Override**: You can override the native server port configured in `server.port` by setting the `PORT` environment variable (e.g., `PORT=9090 ./build/apps/server/petting_zoo_server`).
 
 ## Quickstart
 

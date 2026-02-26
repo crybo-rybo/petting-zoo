@@ -18,11 +18,15 @@ export async function registerModel(path: string) {
   });
 }
 
-export async function selectModel(modelId: string) {
+export async function selectModel(modelId: string, contextSize?: number) {
+  const payload: Record<string, unknown> = { model_id: modelId };
+  if (contextSize !== undefined) {
+    payload.context_size = contextSize;
+  }
   return requestJson<SelectModelResponse>('/api/models/select', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_id: modelId }),
+    body: JSON.stringify(payload),
   });
 }
 

@@ -18,7 +18,8 @@ struct ModelEntry {
   std::string display_name;
   std::string path;
   std::string status = "available";
-  int context_size = 8192;
+  int context_size = 2048;
+  std::uintmax_t file_size_bytes = 0;
 };
 
 struct ParsedModelRegisterRequest {
@@ -32,16 +33,20 @@ struct McpConnectorEntry {
   zoo::mcp::McpClient::Config config;
 };
 
-struct ParsedMcpConnectRequest {
-  std::string id;
-  std::string command;
-  std::vector<std::string> args;
-};
+
 #endif
+
+struct RuntimeConfig {
+  std::vector<std::string> model_discovery_paths = {"./uploads"};
+  std::vector<std::string> allowed_origins = {"http://127.0.0.1:8080", "http://localhost:8080"};
+#ifdef ZOO_ENABLE_MCP
+  std::vector<McpConnectorEntry> mcp_connectors;
+#endif
+};
 
 class RuntimeState {
  public:
-  RuntimeState();
+  explicit RuntimeState(RuntimeConfig config = {});
 
   std::vector<ModelEntry> list_models() const;
   std::optional<std::string> active_model_id() const;
@@ -51,6 +56,7 @@ class RuntimeState {
                                            std::string &error_message);
 
   std::optional<ModelEntry> select_model(const std::string &model_id,
+                                         std::optional<int> context_size_override,
                                          std::string &error_code,
                                          std::string &error_message);
 
@@ -74,13 +80,7 @@ class RuntimeState {
 #ifdef ZOO_ENABLE_MCP
   std::vector<McpConnectorEntry> list_mcp_connectors() const;
 
-  std::optional<McpConnectorEntry> add_mcp_connector(const ParsedMcpConnectRequest &req,
-                                                     std::string &error_code,
-                                                     std::string &error_message);
 
-  bool remove_mcp_connector(const std::string &id,
-                            std::string &error_code,
-                            std::string &error_message);
 
   std::optional<zoo::Agent::McpServerSummary> connect_mcp_server(const std::string &id,
                                                                  std::string &error_code,
@@ -101,6 +101,7 @@ class RuntimeState {
 #ifdef ZOO_ENABLE_MCP
   std::unordered_map<std::string, McpConnectorEntry> mcp_connectors_;
 #endif
+  RuntimeConfig config_;
 };
 
 std::string sanitize_model_id(std::string input);

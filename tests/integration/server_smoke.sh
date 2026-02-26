@@ -8,7 +8,9 @@ fi
 
 SERVER_BIN="$1"
 CURL_BIN="$2"
-BASE_URL="http://127.0.0.1:8080"
+PORT=$((RANDOM % 50000 + 10000))
+export PORT
+BASE_URL="http://127.0.0.1:${PORT}"
 
 TMP_DIR="$(mktemp -d)"
 SERVER_LOG="${TMP_DIR}/server.log"

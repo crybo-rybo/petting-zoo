@@ -4,7 +4,8 @@
   import { tick } from 'svelte';
 
   import McpPanel from './McpPanel.svelte';
-  import { listModels, registerModel, selectModel, unloadModel as unloadSelectedModel } from './features/models/service';
+  import type { ModelSummary } from './shared/api/types';
+  import { listModels, selectModel, unloadModel as unloadSelectedModel } from './features/models/service';
   import { clearMemory, consumeSseStream, openChatStream, resetChat as resetChatSession } from './features/chat/stream';
 
   import DOMPurify from 'dompurify';
@@ -42,8 +43,25 @@
     };
   }
 
+  // Context size options
+  const CONTEXT_SIZE_OPTIONS = [
+    { value: 512, label: '512' },
+    { value: 1024, label: '1K' },
+    { value: 2048, label: '2K' },
+    { value: 4096, label: '4K' },
+    { value: 8192, label: '8K' },
+  ];
+
+  function formatFileSize(bytes: number): string {
+    if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
+    if (bytes >= 1e6) return (bytes / 1e6).toFixed(0) + ' MB';
+    return (bytes / 1e3).toFixed(0) + ' KB';
+  }
+
   // State
-  let modelPath = '';
+  let availableModels: ModelSummary[] = [];
+  let selectedModelId = '';
+  let selectedContextSize = 2048;
   let activeModelId: string | null = null;
   let busy = false;
   let apiError = '';
@@ -104,7 +122,11 @@
     busy = true;
     try {
       const body = await listModels();
+      availableModels = body.models ?? [];
       activeModelId = body.active_model_id ?? null;
+      if (availableModels.length > 0 && !selectedModelId) {
+        selectedModelId = availableModels[0].id;
+      }
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
     } finally {
@@ -113,13 +135,12 @@
   }
 
   async function loadAndSelectModel() {
-    if (!modelPath.trim()) return;
+    if (!selectedModelId) return;
     apiError = '';
     chatError = '';
     busy = true;
     try {
-      const regResp = await registerModel(modelPath);
-      const selResp = await selectModel(regResp.model.id);
+      const selResp = await selectModel(selectedModelId, selectedContextSize);
       activeModelId = selResp.active_model.id;
     } catch (e) {
       apiError = e instanceof Error ? e.message : 'unknown error';
@@ -252,7 +273,7 @@
         <span class="tab-label">Model Configuration</span>
         <span class="tab-summary">
           {#if activeModelId}
-            Active: <span class="mono accent-text" title={activeModelId}>{activeModelId.split('/').pop() || activeModelId}</span>
+            Active: <span class="mono accent-text" title={activeModelId}>{availableModels.find(m => m.id === activeModelId)?.display_name ?? activeModelId}</span>
           {:else}
             No model loaded
           {/if}
@@ -275,31 +296,43 @@
         </div>
         
         <div class="panel-content">
-          <div class="model-input-row">
-            <input 
-              bind:value={modelPath} 
-              placeholder="/absolute/path/to/model.gguf" 
-              disabled={busy || activeModelId !== null} 
-            />
-            {#if !activeModelId}
-              <button class="primary glow load-model-btn" on:click={loadAndSelectModel} disabled={busy || !modelPath.trim()}>
-                <span>Load Model</span>
-              </button>
-            {:else}
-              <button class="danger ghost" on:click={unloadModel} disabled={busy}>Unload</button>
-            {/if}
-          </div>
-          {#if !activeModelId}
-            <p class="control-hint">Load a model to enable chat controls.</p>
-          {/if}
           {#if activeModelId}
             <div class="active-status-row fade-in">
-              <p class="status-text">Active model: <span class="mono accent-text">{activeModelId}</span></p>
+              <p class="status-text">Active: <span class="mono accent-text">{availableModels.find(m => m.id === activeModelId)?.display_name ?? activeModelId}</span></p>
               <div class="badge-memory" title="Long-term context database is active">
                 <span class="badge-icon">🧠</span>
                 <span class="badge-text">Memory Active</span>
               </div>
             </div>
+            <button class="danger ghost" on:click={unloadModel} disabled={busy}>Unload Model</button>
+          {:else}
+            <div class="model-input-row">
+              {#if availableModels.length === 0}
+                <p class="control-hint">No models found in configured discovery paths.</p>
+              {:else}
+                <select bind:value={selectedModelId} disabled={busy} class="model-select">
+                  {#each availableModels as model (model.id)}
+                    <option value={model.id} disabled={model.status === 'unavailable'}>
+                      {model.display_name ?? model.id}{model.status === 'unavailable' ? ' (unavailable)' : ''}{model.file_size_bytes ? ` (${formatFileSize(model.file_size_bytes)})` : ''}
+                    </option>
+                  {/each}
+                </select>
+                <button class="primary glow load-model-btn" on:click={loadAndSelectModel} disabled={busy || !selectedModelId}>
+                  <span>Load</span>
+                </button>
+              {/if}
+            </div>
+            {#if availableModels.length > 0}
+              <div class="context-size-row">
+                <label class="context-label" for="ctx-size">Context Window:</label>
+                <select id="ctx-size" bind:value={selectedContextSize} disabled={busy} class="context-select">
+                  {#each CONTEXT_SIZE_OPTIONS as opt (opt.value)}
+                    <option value={opt.value}>{opt.label} tokens</option>
+                  {/each}
+                </select>
+              </div>
+              <p class="control-hint">Larger context uses more memory. Reduce if model loading fails with OOM.</p>
+            {/if}
           {/if}
         </div>
       </div>
@@ -597,9 +630,79 @@
   .model-input-row {
     display: flex;
     gap: 0.75rem;
+    align-items: stretch;
   }
 
-  input, textarea {
+  select.model-select {
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    background: #ffffff;
+    border: 2px solid var(--border-main);
+    border-radius: 4px;
+    padding: 0.75rem 1rem;
+    color: var(--text-main);
+    flex: 1;
+    box-sizing: border-box;
+    cursor: pointer;
+    transition: all 0.1s ease;
+    appearance: auto;
+  }
+
+  select.model-select:focus {
+    outline: none;
+    border-color: var(--accent-orange);
+    box-shadow: 2px 2px 0px var(--accent-orange);
+    transform: translate(-2px, -2px);
+  }
+
+  select.model-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: #ebe6d8;
+  }
+
+  .context-size-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .context-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  select.context-select {
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: #ffffff;
+    border: 2px solid var(--border-main);
+    border-radius: 4px;
+    padding: 0.4rem 0.6rem;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.1s ease;
+    appearance: auto;
+  }
+
+  select.context-select:focus {
+    outline: none;
+    border-color: var(--accent-orange);
+    box-shadow: 2px 2px 0px var(--accent-orange);
+  }
+
+  select.context-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: #ebe6d8;
+  }
+
+  textarea {
     font-family: inherit;
     font-size: 0.95rem;
     font-weight: 600;
@@ -613,14 +716,14 @@
     transition: all 0.1s ease;
   }
   
-  input:focus, textarea:focus {
+  textarea:focus {
     outline: none;
     border-color: var(--accent-orange);
     box-shadow: 2px 2px 0px var(--accent-orange);
     transform: translate(-2px, -2px);
   }
   
-  input:disabled, textarea:disabled {
+  textarea:disabled {
     opacity: 0.6;
     cursor: not-allowed;
     background: #ebe6d8;

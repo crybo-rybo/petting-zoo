@@ -4,9 +4,11 @@ export type ModelSummary = {
   path?: string;
   status?: string;
   context_size?: number;
+  file_size_bytes?: number;
 };
 
 export type ListModelsResponse = {
+  models: ModelSummary[];
   active_model_id: string | null;
 };
 

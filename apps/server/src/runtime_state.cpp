@@ -24,10 +24,41 @@ std::string sanitize_model_id(std::string input) {
   return input.substr(first, last - first + 1);
 }
 
-RuntimeState::RuntimeState() {
+RuntimeState::RuntimeState(RuntimeConfig config) : config_(std::move(config)) {
   auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
   if (db_result) {
     context_db_ = std::move(*db_result);
+  }
+
+#ifdef ZOO_ENABLE_MCP
+  for (const auto& entry : config_.mcp_connectors) {
+    mcp_connectors_[entry.id] = entry;
+  }
+#endif
+
+  // Auto-discover and pre-register models from configured paths
+  namespace fs = std::filesystem;
+  for (const auto& dir_str : config_.model_discovery_paths) {
+    const fs::path dir_path(dir_str);
+    if (!fs::exists(dir_path) || !fs::is_directory(dir_path)) continue;
+    for (const auto& entry : fs::directory_iterator(dir_path)) {
+      if (!entry.is_regular_file()) continue;
+      if (entry.path().extension() != ".gguf") continue;
+      std::string id = sanitize_model_id(entry.path().stem().string());
+      if (id.empty()) id = "model";
+      if (models_.contains(id) && models_[id].path != entry.path().string()) {
+        int suffix = 2;
+        std::string base = id;
+        do { id = base + "-" + std::to_string(suffix++); } while (models_.contains(id));
+      }
+      ModelEntry model;
+      model.id = id;
+      model.display_name = entry.path().filename().string();
+      model.path = entry.path().string();
+      model.status = "available";
+      model.file_size_bytes = entry.file_size();
+      models_[model.id] = model;
+    }
   }
 }
 
@@ -56,6 +87,23 @@ std::optional<ModelEntry> RuntimeState::register_model(
     std::string &error_message) {
   namespace fs = std::filesystem;
   const fs::path model_path = fs::path(req.path).lexically_normal();
+
+  bool is_allowed_path = false;
+  for (const auto& allowed_dir : config_.model_discovery_paths) {
+    fs::path norm_dir = fs::absolute(fs::path(allowed_dir)).lexically_normal();
+    fs::path abs_model_path = fs::absolute(model_path).lexically_normal();
+    if (abs_model_path.string().rfind(norm_dir.string(), 0) == 0) {
+      is_allowed_path = true;
+      break;
+    }
+  }
+
+  if (!is_allowed_path) {
+    error_code = "APP-SEC-403";
+    error_message = "Model path is not within an allowed directory";
+    return std::nullopt;
+  }
+
   if (!fs::exists(model_path) || !fs::is_regular_file(model_path)) {
     error_code = "APP-VAL-001";
     error_message = "Model path does not exist or is not a regular file";
@@ -82,11 +130,13 @@ std::optional<ModelEntry> RuntimeState::register_model(
   model.display_name = display_name;
   model.path = model_path.string();
   model.status = "available";
+  model.file_size_bytes = fs::file_size(model_path);
   models_[model.id] = model;
   return model;
 }
 
 std::optional<ModelEntry> RuntimeState::select_model(const std::string &model_id,
+                                                     std::optional<int> context_size_override,
                                                      std::string &error_code,
                                                      std::string &error_message) {
   ModelEntry selected;
@@ -107,9 +157,11 @@ std::optional<ModelEntry> RuntimeState::select_model(const std::string &model_id
     return std::nullopt;
   }
 
+  const int ctx_size = context_size_override.value_or(selected.context_size);
+
   zoo::Config config;
   config.model_path = selected.path;
-  config.context_size = selected.context_size;
+  config.context_size = ctx_size;
   config.max_tokens = 512;
 
   auto created = zoo::Agent::create(config);
@@ -206,45 +258,53 @@ std::optional<std::string> RuntimeState::reset_chat(std::string &error_code,
 }
 
 void RuntimeState::unload_model() {
-  std::lock_guard<std::mutex> lock(mu_);
-  std::lock_guard<std::mutex> agent_lock(agent_mu_);
+  std::scoped_lock lock(mu_, agent_mu_);
   agent_.reset();
   active_model_id_ = std::nullopt;
 }
 
 std::optional<std::string> RuntimeState::clear_memory(std::string &error_code,
                                                       std::string &error_message) {
-  std::lock_guard<std::mutex> lock(mu_);
-  
-  if (!context_db_) {
-    error_code = "APP-STATE-500";
-    error_message = "Memory database is not initialized";
-    return std::nullopt;
+  std::shared_ptr<zoo::Agent> agent;
+  std::shared_ptr<zoo::engine::ContextDatabase> new_db;
+  std::optional<std::string> model_id;
+
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+
+    if (!context_db_) {
+      error_code = "APP-STATE-500";
+      error_message = "Memory database is not initialized";
+      return std::nullopt;
+    }
+
+    // Close the old database and wipe the file
+    context_db_.reset();
+    std::filesystem::remove("uploads/memory.db");
+
+    // Re-initialize the database
+    auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
+    if (db_result) {
+      context_db_ = std::move(*db_result);
+      new_db = context_db_;
+    } else {
+      error_code = "APP-DB-500";
+      error_message = "Failed to recreate memory database";
+      return std::nullopt;
+    }
+
+    agent = agent_;
+    model_id = active_model_id_;
   }
-  
-  // Close the old database
-  context_db_.reset();
 
-  // Wipe the actual file
-  std::filesystem::remove("uploads/memory.db");
-
-  // Re-initialize the database
-  auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
-  if (db_result) {
-    context_db_ = std::move(*db_result);
-  } else {
-    error_code = "APP-DB-500";
-    error_message = "Failed to recreate memory database";
-    return std::nullopt;
-  }
-
-  // If there's an active agent, we need to update its reference
-  if (agent_) {
+  // Update the active agent's database reference outside mu_, consistent with
+  // the lock ordering used by chat_complete/chat_stream/reset_chat.
+  if (agent && new_db) {
     std::lock_guard<std::mutex> agent_lock(agent_mu_);
-    agent_->set_context_database(context_db_);
+    agent->set_context_database(new_db);
   }
 
-  return active_model_id_.value_or("none");
+  return model_id.value_or("none");
 }
 
 #ifdef ZOO_ENABLE_MCP
@@ -258,45 +318,7 @@ std::vector<McpConnectorEntry> RuntimeState::list_mcp_connectors() const {
   return out;
 }
 
-std::optional<McpConnectorEntry> RuntimeState::add_mcp_connector(
-    const ParsedMcpConnectRequest &req, std::string &error_code,
-    std::string &error_message) {
-  std::lock_guard<std::mutex> lock(mu_);
-  if (mcp_connectors_.contains(req.id)) {
-    error_code = "APP-MCP-409";
-    error_message = "Connector ID already exists";
-    return std::nullopt;
-  }
 
-  McpConnectorEntry entry;
-  entry.id = req.id;
-  entry.config.server_id = req.id;
-  entry.config.transport.command = req.command;
-  entry.config.transport.args = req.args;
-
-  mcp_connectors_[req.id] = entry;
-  return entry;
-}
-
-bool RuntimeState::remove_mcp_connector(const std::string &id,
-                                        std::string &error_code,
-                                        std::string &error_message) {
-  std::lock_guard<std::mutex> lock(mu_);
-  if (!mcp_connectors_.contains(id)) {
-    error_code = "APP-MCP-404";
-    error_message = "Connector not found";
-    return false;
-  }
-  
-  // If we have an active agent, try to disconnect it just in case
-  if (agent_) {
-    std::lock_guard<std::mutex> agent_lock(agent_mu_);
-    (void)agent_->remove_mcp_server(id);
-  }
-
-  mcp_connectors_.erase(id);
-  return true;
-}
 
 std::optional<zoo::Agent::McpServerSummary> RuntimeState::connect_mcp_server(
     const std::string &id, std::string &error_code, std::string &error_message) {

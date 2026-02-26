@@ -16,6 +16,7 @@ std::optional<std::string> parse_model_register_request(const JsonPtr &json,
 
 std::optional<std::string> parse_model_select_request(const JsonPtr &json,
                                                       std::string &model_id,
+                                                      std::optional<int> &context_size,
                                                       Json::Value &details);
 
 std::optional<std::string> parse_chat_complete_request(const JsonPtr &json,

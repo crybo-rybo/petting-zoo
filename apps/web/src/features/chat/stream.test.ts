@@ -26,4 +26,29 @@ describe('consumeSseStream', () => {
     expect(events[0].type).toBe('token');
     expect(events[1].type).toBe('done');
   });
+
+  it('ignores malformed JSON gracefully', async () => {
+    const encoder = new TextEncoder();
+    const chunks = [
+      encoder.encode('data: {"type":"token","content":"hel"}\n\ndata: {broken json}\n\ndata: {"type":"token","content":"lo"}\n\n'),
+    ];
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(chunk);
+        controller.close();
+      },
+    });
+
+    const events: Array<{ type: string; content?: string }> = [];
+    await consumeSseStream(stream, (event) => {
+      events.push(event as { type: string; content?: string });
+    });
+
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe('token');
+    expect(events[0].content).toBe('hel');
+    expect(events[1].type).toBe('token');
+    expect(events[1].content).toBe('lo');
+  });
 });

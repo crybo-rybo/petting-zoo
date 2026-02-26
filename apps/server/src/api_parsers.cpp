@@ -34,6 +34,7 @@ std::optional<std::string> parse_model_register_request(const JsonPtr &json,
 
 std::optional<std::string> parse_model_select_request(const JsonPtr &json,
                                                       std::string &model_id,
+                                                      std::optional<int> &context_size,
                                                       Json::Value &details) {
   if (!json || !json->isObject()) {
     return "Body must be a JSON object";
@@ -49,6 +50,19 @@ std::optional<std::string> parse_model_select_request(const JsonPtr &json,
   if (model_id.empty()) {
     details["field"] = "model_id";
     return "Field 'model_id' cannot be empty";
+  }
+
+  if (obj.isMember("context_size")) {
+    if (!obj["context_size"].isInt()) {
+      details["field"] = "context_size";
+      return "Field 'context_size' must be an integer";
+    }
+    int val = obj["context_size"].asInt();
+    if (val <= 0) {
+      details["field"] = "context_size";
+      return "Field 'context_size' must be positive";
+    }
+    context_size = val;
   }
 
   return std::nullopt;

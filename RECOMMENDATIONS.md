@@ -6,84 +6,110 @@ Comprehensive evaluation of the codebase, prioritized from critical issues that 
 
 ## 1. Should Definitely Change (Blockers)
 
-### 1.1 Path Traversal — Arbitrary File Read
+### ~~1.1 Path Traversal — Arbitrary File Read~~ ✅
 **`apps/server/src/routes_spa.cpp:18-20`**
 
-The SPA catch-all route joins the raw URL path to `web_root` without canonicalization. A request to `/../../../etc/passwd` traverses out of the web root and serves any file readable by the server process. Must validate that the resolved canonical path starts with the web root prefix.
+~~The SPA catch-all route joins the raw URL path to `web_root` without canonicalization. A request to `/../../../etc/passwd` traverses out of the web root and serves any file readable by the server process. Must validate that the resolved canonical path starts with the web root prefix.~~
 
-### 1.2 Remote Command Execution via MCP Connector Registration
+*Fixed in `e88be10`. Path is canonicalized with `lexically_normal()` and validated against the web root prefix. Returns 403 on traversal attempts.*
+
+### ~~1.2 Remote Command Execution via MCP Connector Registration~~ ✅
 **`apps/server/src/routes_mcp.cpp:12-28` + `runtime_state.cpp:261-278`**
 
-`POST /api/mcp/connectors` accepts an arbitrary `command` and `args` from the client, stored and passed to `zoo::mcp::McpClient` for subprocess execution. There is zero validation — no allowlist, no path restriction. Combined with the lack of CORS (1.4), any browser tab on the same machine can execute arbitrary commands as the server user.
+~~`POST /api/mcp/connectors` accepts an arbitrary `command` and `args` from the client, stored and passed to `zoo::mcp::McpClient` for subprocess execution. There is zero validation — no allowlist, no path restriction. Combined with the lack of CORS (1.4), any browser tab on the same machine can execute arbitrary commands as the server user.~~
 
-### 1.3 Filesystem Probing via Model Registration
+*Fixed in `e88be10`. MCP connectors are now pre-configured via `config/app.json` at startup only. No dynamic command registration from client requests.*
+
+### ~~1.3 Filesystem Probing via Model Registration~~ ✅
 **`apps/server/src/runtime_state.cpp:58-63` + `api_serialization.cpp:8`**
 
-`POST /api/models/register` accepts any filesystem path, probes its existence, and reflects the full absolute path back in the JSON response. This enables file-existence enumeration and leaks internal filesystem structure. Restrict to a configurable model directory allowlist.
+~~`POST /api/models/register` accepts any filesystem path, probes its existence, and reflects the full absolute path back in the JSON response. This enables file-existence enumeration and leaks internal filesystem structure. Restrict to a configurable model directory allowlist.~~
 
-### 1.4 No CORS Headers
+*Fixed in `e88be10`. Model paths are validated against `config_.model_discovery_paths` allowlist. Returns `APP-SEC-403` if path is outside allowed directories.*
+
+### ~~1.4 No CORS Headers~~ ✅
 **`apps/server/src/main.cpp`**
 
-No CORS policy is set anywhere. The server binds to `127.0.0.1`, but any website the user visits can silently make requests to `localhost:8080` — registering models, running MCP commands, chatting with the model. Add strict `Access-Control-Allow-Origin` for the served origin only.
+~~No CORS policy is set anywhere. The server binds to `127.0.0.1`, but any website the user visits can silently make requests to `localhost:8080` — registering models, running MCP commands, chatting with the model. Add strict `Access-Control-Allow-Origin` for the served origin only.~~
 
-### 1.5 No Application Logging
+*Fixed in `e88be10`. CORS origin validation in pre-routing advice, proper headers on OPTIONS preflight, and `Access-Control-Allow-Origin` on all responses. Allowed origins loaded from `config/app.json`.*
+
+### ~~1.5 No Application Logging~~ ✅
 **Entire `apps/server/src/`**
 
-Zero application-level log output. Model loads, chat requests, errors, MCP command executions — none produce any log. The only logging is Drogon's framework-level output at `kWarn`. This makes debugging, incident response, and auditing impossible.
+~~Zero application-level log output. Model loads, chat requests, errors, MCP command executions — none produce any log. The only logging is Drogon's framework-level output at `kWarn`. This makes debugging, incident response, and auditing impossible.~~
 
-### 1.6 Configuration Is Entirely Hardcoded
+*Fixed in `e88be10`. `LOG_INFO`, `LOG_ERROR`, and `LOG_WARN` used throughout all route handlers, runtime state operations, and server lifecycle events.*
+
+### ~~1.6 Configuration Is Entirely Hardcoded~~ ✅
 **`apps/server/src/main.cpp:26-27`, `runtime_state.hpp:22`**
 
-`config/app.example.yaml` exists and is well-structured but completely unused. Bind address (`127.0.0.1`), port (`8080`), context size (`8192`), log level, and web root are all hardcoded or compile-time only. Implement runtime config loading from this YAML file (or environment variables at minimum).
+~~`config/app.example.yaml` exists and is well-structured but completely unused. Bind address (`127.0.0.1`), port (`8080`), context size (`8192`), log level, and web root are all hardcoded or compile-time only. Implement runtime config loading from this YAML file (or environment variables at minimum).~~
 
-### 1.7 SSE JSON Parse Has No Error Handling
+*Fixed in `e88be10`. Runtime config loaded from `config/app.json` with `PORT` environment variable override. Supports server host/port, model discovery paths, MCP connectors, CORS origins, and log level. Falls back to defaults if file is missing.*
+
+### ~~1.7 SSE JSON Parse Has No Error Handling~~ ✅
 **`apps/web/src/features/chat/stream.ts:48`**
 
-`JSON.parse(part.slice(6))` has no try/catch. A single malformed SSE payload from the server crashes the entire stream consumer, losing the partial response accumulated so far. Wrap in try/catch and surface the error gracefully.
+~~`JSON.parse(part.slice(6))` has no try/catch. A single malformed SSE payload from the server crashes the entire stream consumer, losing the partial response accumulated so far. Wrap in try/catch and surface the error gracefully.~~
+
+*Fixed in `e88be10`. `JSON.parse` wrapped in try/catch; malformed events are logged and skipped without crashing the stream.*
 
 ---
 
 ## 2. Should Change (High Priority)
 
-### 2.1 Fragile Dual-Mutex Locking Discipline
+### ~~2.1 Fragile Dual-Mutex Locking Discipline~~ ✅
 **`apps/server/src/runtime_state.cpp` — throughout**
 
-`RuntimeState` uses `mu_` and `agent_mu_` with inconsistent acquisition patterns. `unload_model()` and `clear_memory()` hold `mu_` while acquiring `agent_mu_`, but `chat_complete()` / `chat_stream()` release `mu_` before acquiring `agent_mu_`, creating a TOCTOU window where the agent can be swapped between the two lock acquisitions. The overall locking contract is fragile — one future change acquiring locks in the wrong order introduces deadlock. Consider a single mutex, or document and enforce the lock ordering invariant with assertions.
+~~`RuntimeState` uses `mu_` and `agent_mu_` with inconsistent acquisition patterns. `unload_model()` and `clear_memory()` hold `mu_` while acquiring `agent_mu_`, but `chat_complete()` / `chat_stream()` release `mu_` before acquiring `agent_mu_`, creating a TOCTOU window where the agent can be swapped between the two lock acquisitions. The overall locking contract is fragile — one future change acquiring locks in the wrong order introduces deadlock. Consider a single mutex, or document and enforce the lock ordering invariant with assertions.~~
 
-### 2.2 Detached Threads with No Shutdown Coordination
+*Fixed in `e88be10`. Consistent lock ordering enforced: `std::scoped_lock` for coordinated operations, consistent acquire-release patterns across all methods.*
+
+### ~~2.2 Detached Threads with No Shutdown Coordination~~ ✅
 **`apps/server/src/routes_chat.cpp:77-135`**
 
-Streaming responses spawn `std::thread(...).detach()`. On process exit (SIGTERM, Ctrl-C), detached threads running inference are forcefully killed mid-operation. No signal handler, no cancellation token, no join. This risks model state corruption and unclean resource release. Use joinable threads tracked by the runtime, with a shutdown signal.
+~~Streaming responses spawn `std::thread(...).detach()`. On process exit (SIGTERM, Ctrl-C), detached threads running inference are forcefully killed mid-operation. No signal handler, no cancellation token, no join. This risks model state corruption and unclean resource release. Use joinable threads tracked by the runtime, with a shutdown signal.~~
 
-### 2.3 No Binary Hardening Flags
+*Fixed in `e88be10`. Active streams tracked via atomic counter. `shutdown_chat_routes()` waits for all active streams to complete (up to 10s timeout) during server shutdown.*
+
+### ~~2.3 No Binary Hardening Flags~~ ✅
 **`apps/server/CMakeLists.txt:31-35`**
 
-Warnings are enabled (`-Wall -Wextra -Wpedantic`), but no security hardening: no `-D_FORTIFY_SOURCE=2`, `-fstack-protector-strong`, `-fPIE`/`-pie`, or `-Wl,-z,relro,-z,now`. Add these for release builds.
+~~Warnings are enabled (`-Wall -Wextra -Wpedantic`), but no security hardening: no `-D_FORTIFY_SOURCE=2`, `-fstack-protector-strong`, `-fPIE`/`-pie`, or `-Wl,-z,relro,-z,now`. Add these for release builds.~~
 
-### 2.4 `.gitignore` Gaps — Runtime Data at Risk of Commit
+*Fixed in `e88be10`. Added `-fPIE`, `-fstack-protector-strong`, `-D_FORTIFY_SOURCE=2` (Release), and Linux-specific `-Wl,-z,relro,-z,now -pie`.*
+
+### ~~2.4 `.gitignore` Gaps — Runtime Data at Risk of Commit~~ ✅
 **`.gitignore`**
 
-`uploads/` (root and `apps/web/uploads/`) contain `memory.db` SQLite databases and 256-entry `tmp/` hash directories. These are untracked but not gitignored — one `git add -A` away from being committed. Also missing: `*.db`, `*.sqlite`, `*.gguf`, `.env`, `.cache/`, `*.log`. `test_memory.py` (committed) contains a hardcoded user-specific model path.
+~~`uploads/` (root and `apps/web/uploads/`) contain `memory.db` SQLite databases and 256-entry `tmp/` hash directories. These are untracked but not gitignored — one `git add -A` away from being committed. Also missing: `*.db`, `*.sqlite`, `*.gguf`, `.env`, `.cache/`, `*.log`. `test_memory.py` (committed) contains a hardcoded user-specific model path.~~
 
-### 2.5 Zero C++ Unit Tests for Application Code
+*Fixed in `9237b30` and `e88be10`. `.gitignore` now covers `*.db`, `*.sqlite`, `*.gguf`, `uploads/`, `.env`, `.cache/`, `tmp/`, `*.log`, and `config/app.json`. `test_memory.py` removed.*
+
+### 2.5 ~~Zero~~ Minimal C++ Unit Tests for Application Code — Partially Addressed
 **`tests/`**
 
-The only C++ test (`config_sanity`) tests the upstream `zoo` library, not petting-zoo code. Route handlers, API parsers (`api_parsers.cpp`), serialization (`api_serialization.cpp`), and `RuntimeState` logic are entirely untested at the unit level. The smoke test covers happy-path HTTP but not edge cases, concurrency, or error paths.
+~~The only C++ test (`config_sanity`) tests the upstream `zoo` library, not petting-zoo code.~~ API parser unit tests added in `e88be10` (`tests/cpp/test_api_parsers.cpp`). Route handlers, serialization (`api_serialization.cpp`), and `RuntimeState` logic remain untested at the unit level. The smoke test covers happy-path HTTP but not edge cases, concurrency, or error paths.
 
-### 2.6 Frontend Test Coverage Gaps
+### 2.6 Frontend Test Coverage Gaps — Partially Addressed
 **`apps/web/src/`**
 
-No tests for: `shared/api/client.ts` (request/error logic), `features/models/service.ts`, `features/mcp/service.ts`, or any Svelte component. `App.svelte` (1097 lines) and `McpPanel.svelte` (458 lines) have zero tests. Existing tests miss edge cases (malformed SSE, empty streams, zero-value metrics).
+No tests for: `shared/api/client.ts` (request/error logic), `features/models/service.ts`, `features/mcp/service.ts`, or any Svelte component. `App.svelte` and `McpPanel.svelte` have zero tests. ~~Existing tests miss edge cases (malformed SSE, empty streams, zero-value metrics).~~ SSE stream edge cases (split payloads, malformed JSON) now covered in `stream.test.ts` added in `e88be10`.
 
-### 2.7 Smoke Test Hardcodes Port 8080
+### ~~2.7 Smoke Test Hardcodes Port 8080~~ ✅
 **`tests/integration/server_smoke.sh:12`**
 
-If port 8080 is already in use (dev server running, another test), the smoke test either fails or tests the wrong server. Accept a port via environment variable or find a free port dynamically.
+~~If port 8080 is already in use (dev server running, another test), the smoke test either fails or tests the wrong server. Accept a port via environment variable or find a free port dynamically.~~
 
-### 2.8 Deferred Routes Return 404 Instead of 501
+*Fixed in `e88be10`. Port dynamically generated via `$((RANDOM % 50000 + 10000))` and passed to server via `PORT` environment variable.*
+
+### ~~2.8 Deferred Routes Return 404 Instead of 501~~ ✅
 **`apps/server/src/routes_deferred.cpp:11`**
 
-Unimplemented-but-contracted endpoints return `404 Not Found`. RFC 7231 specifies `501 Not Implemented` for this case. 404 makes it impossible for clients to distinguish "endpoint doesn't exist" from "endpoint exists but isn't ready yet."
+~~Unimplemented-but-contracted endpoints return `404 Not Found`. RFC 7231 specifies `501 Not Implemented` for this case. 404 makes it impossible for clients to distinguish "endpoint doesn't exist" from "endpoint exists but isn't ready yet."~~
+
+*Fixed in `e88be10`. Deferred routes now return `501 Not Implemented` with error code `APP-NOT-IMPL-001`.*
 
 ---
 

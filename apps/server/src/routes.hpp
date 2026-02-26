@@ -7,6 +7,7 @@
 void register_health_routes();
 void register_model_routes(RuntimeState &runtime_state);
 void register_chat_routes(RuntimeState &runtime_state);
+void shutdown_chat_routes();
 void register_deferred_routes();
 void register_mcp_routes(RuntimeState &runtime_state);
 void register_spa_routes(const std::filesystem::path &web_root,

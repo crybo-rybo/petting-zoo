@@ -45,8 +45,12 @@ export async function consumeSseStream(
 
     for (const part of parts) {
       if (!part.startsWith('data: ')) continue;
-      const event = JSON.parse(part.slice(6)) as ChatStreamEvent;
-      await onEvent(event);
+      try {
+        const event = JSON.parse(part.slice(6)) as ChatStreamEvent;
+        await onEvent(event);
+      } catch (err) {
+        console.error('Failed to parse SSE event:', err, part);
+      }
     }
   }
 }

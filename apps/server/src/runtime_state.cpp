@@ -265,37 +265,46 @@ void RuntimeState::unload_model() {
 
 std::optional<std::string> RuntimeState::clear_memory(std::string &error_code,
                                                       std::string &error_message) {
-  std::lock_guard<std::mutex> lock(mu_);
-  
-  if (!context_db_) {
-    error_code = "APP-STATE-500";
-    error_message = "Memory database is not initialized";
-    return std::nullopt;
+  std::shared_ptr<zoo::Agent> agent;
+  std::shared_ptr<zoo::engine::ContextDatabase> new_db;
+  std::optional<std::string> model_id;
+
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+
+    if (!context_db_) {
+      error_code = "APP-STATE-500";
+      error_message = "Memory database is not initialized";
+      return std::nullopt;
+    }
+
+    // Close the old database and wipe the file
+    context_db_.reset();
+    std::filesystem::remove("uploads/memory.db");
+
+    // Re-initialize the database
+    auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
+    if (db_result) {
+      context_db_ = std::move(*db_result);
+      new_db = context_db_;
+    } else {
+      error_code = "APP-DB-500";
+      error_message = "Failed to recreate memory database";
+      return std::nullopt;
+    }
+
+    agent = agent_;
+    model_id = active_model_id_;
   }
-  
-  // Close the old database
-  context_db_.reset();
 
-  // Wipe the actual file
-  std::filesystem::remove("uploads/memory.db");
-
-  // Re-initialize the database
-  auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
-  if (db_result) {
-    context_db_ = std::move(*db_result);
-  } else {
-    error_code = "APP-DB-500";
-    error_message = "Failed to recreate memory database";
-    return std::nullopt;
-  }
-
-  // If there's an active agent, we need to update its reference
-  if (agent_) {
+  // Update the active agent's database reference outside mu_, consistent with
+  // the lock ordering used by chat_complete/chat_stream/reset_chat.
+  if (agent && new_db) {
     std::lock_guard<std::mutex> agent_lock(agent_mu_);
-    agent_->set_context_database(context_db_);
+    agent->set_context_database(new_db);
   }
 
-  return active_model_id_.value_or("none");
+  return model_id.value_or("none");
 }
 
 #ifdef ZOO_ENABLE_MCP

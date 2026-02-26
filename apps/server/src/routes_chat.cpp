@@ -15,8 +15,14 @@ static std::atomic<int> active_chat_streams{0};
 void shutdown_chat_routes() {
   if (active_chat_streams.load() > 0) {
     LOG_INFO << "Waiting for " << active_chat_streams.load() << " active chat stream(s) to finish...";
-    while (active_chat_streams.load() > 0) {
+    const int max_wait_ms = 10000;
+    int elapsed_ms = 0;
+    while (active_chat_streams.load() > 0 && elapsed_ms < max_wait_ms) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      elapsed_ms += 100;
+    }
+    if (active_chat_streams.load() > 0) {
+      LOG_WARN << "Shutdown timeout: " << active_chat_streams.load() << " stream(s) still active, forcing exit";
     }
   }
 }

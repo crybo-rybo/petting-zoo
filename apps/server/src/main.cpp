@@ -150,7 +150,12 @@ int main() {
   drogon::app().registerPostHandlingAdvice([&config](const drogon::HttpRequestPtr &req, const drogon::HttpResponsePtr &resp) {
     auto origin = req->getHeader("origin");
     if (!origin.empty()) {
-       resp->addHeader("Access-Control-Allow-Origin", origin);
+      for (const auto& allowed_origin : config.allowed_origins) {
+        if (origin == allowed_origin) {
+          resp->addHeader("Access-Control-Allow-Origin", origin);
+          break;
+        }
+      }
     }
   });
 

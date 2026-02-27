@@ -434,6 +434,7 @@
 
 <style>
   :global(:root) {
+    interpolate-size: allow-keywords;
     --bg-base: #fdfbf7; /* Desert Creme */
     --bg-card: #ffffff;
     --border-main: #233d31; /* Dark Muted Green */
@@ -955,6 +956,7 @@
     line-height: 1.6;
     border: 2px solid var(--border-main);
     box-shadow: 4px 4px 0px var(--border-main);
+    transition: width 0.15s ease-out, height 0.15s ease-out, box-shadow 0.1s ease-out;
   }
   
   .message-header {

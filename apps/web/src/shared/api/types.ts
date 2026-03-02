@@ -30,6 +30,11 @@ export type ChatUsage = {
   total_tokens: number;
 };
 
+export type ChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
 export type ChatMetrics = {
   latency_ms: number;
   time_to_first_token_ms: number;

@@ -9,7 +9,6 @@ Guidance for contributors and coding agents working in this repository.
 - Application responsibilities here include API hosting, UI, app state, orchestration, and integrations.
 
 ## Source of Truth
-- Implementation roadmap: `APPLICATION_PLAN.md`
 - High-level project overview: `README.md`
 
 ## Working Rules
@@ -38,8 +37,6 @@ Guidance for contributors and coding agents working in this repository.
 ## Expected Layout (Target)
 - `apps/server/`
 - `apps/web/`
-- `include/zoo_app/`
-- `src/zoo_app/`
 - `config/`
 - `docs/api/`
 - `tests/`

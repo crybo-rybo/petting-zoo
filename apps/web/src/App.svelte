@@ -4,7 +4,7 @@
   import { tick } from 'svelte';
 
   import McpPanel from './McpPanel.svelte';
-  import type { ModelSummary } from './shared/api/types';
+  import type { ChatMessage, ModelSummary } from './shared/api/types';
   import { listModels, selectModel, unloadModel as unloadSelectedModel } from './features/models/service';
   import { clearMemory, consumeSseStream, openChatStream, resetChat as resetChatSession } from './features/chat/stream';
 
@@ -68,7 +68,6 @@
   let isModelModalOpen = false;
 
   // Chat State
-  type ChatMessage = { role: 'user' | 'assistant'; content: string };
   let chatHistory: ChatMessage[] = [];
   let chatInput = '';
   let chatError = '';

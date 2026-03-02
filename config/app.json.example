@@ -6,7 +6,8 @@
   "runtime": {
     "model_discovery_paths": [
       "./uploads/"
-    ]
+    ],
+    "memory_db_path": "./uploads/memory.db"
   },
   "mcp_connectors": [
     {

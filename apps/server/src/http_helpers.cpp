@@ -40,9 +40,13 @@ std::string generate_correlation_id() {
 }
 
 std::string resolve_correlation_id(const drogon::HttpRequestPtr &req) {
+  static constexpr std::size_t kMaxCorrelationIdLength = 128;
   const auto incoming = req->getHeader("X-Correlation-Id");
   if (!incoming.empty()) {
-    return incoming;
+    if (incoming.size() <= kMaxCorrelationIdLength) {
+      return incoming;
+    }
+    return incoming.substr(0, kMaxCorrelationIdLength);
   }
   return generate_correlation_id();
 }

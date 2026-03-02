@@ -38,6 +38,7 @@ struct McpConnectorEntry {
 
 struct RuntimeConfig {
   std::vector<std::string> model_discovery_paths = {"./uploads"};
+  std::string memory_db_path = "./uploads/memory.db";
   std::vector<std::string> allowed_origins = {"http://127.0.0.1:8080", "http://localhost:8080"};
 #ifdef ZOO_ENABLE_MCP
   std::vector<McpConnectorEntry> mcp_connectors;

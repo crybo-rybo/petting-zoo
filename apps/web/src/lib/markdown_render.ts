@@ -1,5 +1,5 @@
 import hljs from 'highlight.js';
-import { marked } from 'marked';
+import { marked, type Tokens } from 'marked';
 
 const escapeHtml = (value: string): string =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -11,7 +11,7 @@ const normalizeLanguage = (lang: string | null | undefined): string => {
 };
 
 const renderer = {
-  code(token: any) {
+  code(token: Tokens.Code) {
     const language = normalizeLanguage(token.lang);
     const highlighted = hljs.highlight(token.text ?? '', { language }).value;
     return [
@@ -24,7 +24,7 @@ const renderer = {
       '</div>'
     ].join('');
   },
-  html(token: any) {
+  html(token: Tokens.HTML) {
     // Raw HTML-like text should render literally in chat output.
     return escapeHtml(token.raw ?? token.text ?? '');
   }

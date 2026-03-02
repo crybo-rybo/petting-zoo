@@ -13,11 +13,11 @@ if(NOT Drogon_FOUND)
   set(BUILD_REDIS OFF CACHE BOOL "" FORCE)
   set(BUILD_MYSQL OFF CACHE BOOL "" FORCE)
   set(BUILD_POSTGRESQL OFF CACHE BOOL "" FORCE)
-  set(BUILD_SQLITE ON CACHE BOOL "" FORCE)
+  set(BUILD_SQLITE OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(
     drogon
     GIT_REPOSITORY https://github.com/drogonframework/drogon.git
-    GIT_TAG v1.9.12
+    GIT_TAG 89aca8c7993c8194f2c109c1d06a3b45bf363d5d # v1.9.12
   )
   FetchContent_MakeAvailable(drogon)
 endif()

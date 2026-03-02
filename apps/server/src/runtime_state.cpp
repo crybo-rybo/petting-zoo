@@ -25,7 +25,7 @@ std::string sanitize_model_id(std::string input) {
 }
 
 RuntimeState::RuntimeState(RuntimeConfig config) : config_(std::move(config)) {
-  auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
+  auto db_result = zoo::engine::ContextDatabase::open(config_.memory_db_path);
   if (db_result) {
     context_db_ = std::move(*db_result);
   }
@@ -162,7 +162,7 @@ std::optional<ModelEntry> RuntimeState::select_model(const std::string &model_id
   zoo::Config config;
   config.model_path = selected.path;
   config.context_size = ctx_size;
-  config.max_tokens = 512;
+  config.max_tokens = 1024; // TODO: make this configurable - figure out a good method for deriving this from the model file
 
   auto created = zoo::Agent::create(config);
   if (!created) {
@@ -280,10 +280,10 @@ std::optional<std::string> RuntimeState::clear_memory(std::string &error_code,
 
     // Close the old database and wipe the file
     context_db_.reset();
-    std::filesystem::remove("uploads/memory.db");
+    std::filesystem::remove(config_.memory_db_path);
 
     // Re-initialize the database
-    auto db_result = zoo::engine::ContextDatabase::open("uploads/memory.db");
+    auto db_result = zoo::engine::ContextDatabase::open(config_.memory_db_path);
     if (db_result) {
       context_db_ = std::move(*db_result);
       new_db = context_db_;

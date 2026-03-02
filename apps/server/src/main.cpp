@@ -2,6 +2,7 @@
 #include <json/json.h>
 #include <fstream>
 #include <filesystem>
+#include <cstring>
 #include <string>
 
 #include "routes.hpp"
@@ -49,6 +50,9 @@ RuntimeConfig load_config(const std::string& config_path, int& port, std::string
         config.model_discovery_paths.push_back(path.asString());
       }
     }
+    if (runtime.isMember("memory_db_path") && runtime["memory_db_path"].isString()) {
+      config.memory_db_path = runtime["memory_db_path"].asString();
+    }
   }
 
   if (root.isMember("observability") && root["observability"].isMember("log_level")) {
@@ -88,7 +92,7 @@ RuntimeConfig load_config(const std::string& config_path, int& port, std::string
   return config;
 }
 
-int main() {
+int main(int argc, char** argv) {
   namespace fs = std::filesystem;
 
   int port = 8080;
@@ -96,6 +100,18 @@ int main() {
   auto log_level = trantor::Logger::kWarn;
 
   RuntimeConfig config = load_config("config/app.json", port, host, log_level);
+  const fs::path executable_dir =
+      (argc > 0 && argv != nullptr && argv[0] != nullptr && std::strlen(argv[0]) > 0)
+          ? fs::absolute(fs::path(argv[0])).parent_path()
+          : fs::current_path();
+  if (!fs::path(config.memory_db_path).is_absolute()) {
+    config.memory_db_path = (executable_dir / config.memory_db_path).lexically_normal().string();
+  }
+  const fs::path memory_db_parent = fs::path(config.memory_db_path).parent_path();
+  if (!memory_db_parent.empty()) {
+    std::error_code ec;
+    fs::create_directories(memory_db_parent, ec);
+  }
 
   static RuntimeState runtime_state(config);
 

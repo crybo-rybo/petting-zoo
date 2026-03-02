@@ -80,7 +80,7 @@ The web root path is baked in at compile time via the `PETTING_ZOO_WEB_ROOT` def
 
 ### Frontend (`apps/web/src/`)
 
-Single-component SPA (`App.svelte`) that communicates exclusively with the backend REST API. `lib/chat_format.ts` contains formatting utilities (tested with Vitest in `lib/chat_format.test.ts`).
+Svelte SPA composed of `App.svelte` and `McpPanel.svelte`, with API/service logic split into `features/*` and `shared/api/*`. `lib/chat_format.ts` contains formatting utilities (tested with Vitest in `lib/chat_format.test.ts`).
 
 ### Deferred Contracts
 

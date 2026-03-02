@@ -17,11 +17,14 @@ Implemented and supported API endpoints:
 - `GET /api/models`
 - `POST /api/models/register`
 - `POST /api/models/select`
+- `POST /api/models/unload`
 - `POST /api/chat/complete`
-- `GET /api/chat/stream`
+- `POST /api/chat/stream`
 - `POST /api/chat/reset`
 - `POST /api/chat/clear_memory`
 - `GET /api/mcp/connectors`
+- `POST /api/mcp/connectors/{id}/connect`
+- `POST /api/mcp/connectors/{id}/disconnect`
 
 Deferred contracts are preserved for future reintroduction:
 
@@ -34,6 +37,7 @@ The server is configured via `config/app.json`.
 
 - **Model Loading**: For security against path traversal, models can only be registered if their absolute path falls strictly within one of the directories specified in `runtime.model_discovery_paths`.
 - **MCP Connectors**: For security against arbitrary remote code execution, MCP connectors are strictly configured via the `mcp_connectors` array. Dynamic registration via the API is disabled.
+- **Request Guards**: `server.max_request_body_bytes` limits HTTP payload size, `server.max_chat_message_chars` limits chat input length, and `server.rate_limit` configures per-IP request throttling (with stricter limits on chat generation endpoints).
 - **Port Override**: You can override the native server port configured in `server.port` by setting the `PORT` environment variable (e.g., `PORT=9090 ./build/apps/server/petting_zoo_server`).
 
 ## Quickstart

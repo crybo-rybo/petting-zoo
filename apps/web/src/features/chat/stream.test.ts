@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { consumeSseStream } from './stream';
 
@@ -28,6 +28,7 @@ describe('consumeSseStream', () => {
   });
 
   it('ignores malformed JSON gracefully', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const encoder = new TextEncoder();
     const chunks = [
       encoder.encode('data: {"type":"token","content":"hel"}\n\ndata: {broken json}\n\ndata: {"type":"token","content":"lo"}\n\n'),
@@ -50,5 +51,7 @@ describe('consumeSseStream', () => {
     expect(events[0].content).toBe('hel');
     expect(events[1].type).toBe('token');
     expect(events[1].content).toBe('lo');
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 });

@@ -21,4 +21,5 @@ std::optional<std::string> parse_model_select_request(const JsonPtr &json,
 
 std::optional<std::string> parse_chat_complete_request(const JsonPtr &json,
                                                        std::string &message,
-                                                       Json::Value &details);
+                                                       Json::Value &details,
+                                                       std::size_t max_message_chars);

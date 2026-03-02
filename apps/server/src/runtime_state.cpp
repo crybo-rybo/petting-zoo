@@ -237,6 +237,10 @@ std::optional<zoo::Response> RuntimeState::chat_stream(
   return *result;
 }
 
+std::size_t RuntimeState::max_chat_message_chars() const {
+  return config_.max_chat_message_chars;
+}
+
 std::optional<std::string> RuntimeState::reset_chat(std::string &error_code,
                                                      std::string &error_message) {
   std::shared_ptr<zoo::Agent> agent;

@@ -61,6 +61,18 @@ fi
 
 grep -q '"APP-STATE-409"' "${BODY_FILE}"
 
+LONG_MSG="$(head -c 16001 < /dev/zero | tr '\0' 'x')"
+code="$("${CURL_BIN}" -sS -o "${BODY_FILE}" -w "%{http_code}" \
+  -X POST "${BASE_URL}/api/chat/complete" \
+  -H 'Content-Type: application/json' \
+  -d "{\"message\":\"${LONG_MSG}\"}")"
+if [[ "${code}" != "413" ]]; then
+  echo "expected 413 from /api/chat/complete with oversized message, got ${code}" >&2
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+grep -q '"APP-REQ-413"' "${BODY_FILE}"
+
 code="$("${CURL_BIN}" -sS -o "${BODY_FILE}" -w "%{http_code}" \
   -X POST "${BASE_URL}/api/chat/reset")"
 if [[ "${code}" != "409" ]]; then

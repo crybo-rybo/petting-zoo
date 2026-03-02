@@ -36,11 +36,15 @@ void register_chat_routes(RuntimeState &runtime_state) {
         std::string message;
         Json::Value details(Json::objectValue);
         if (const auto parse_error =
-                parse_chat_complete_request(req->getJsonObject(), message, details);
+                parse_chat_complete_request(req->getJsonObject(), message, details,
+                                            runtime_state.max_chat_message_chars());
             parse_error.has_value()) {
           LOG_ERROR << "Failed to parse chat complete request: " << *parse_error;
-          write_error(req, std::move(cb), drogon::k400BadRequest, "APP-VAL-001",
-                      "validation", *parse_error, false, details);
+          const bool too_large = details.isMember("max_chars");
+          write_error(req, std::move(cb),
+                      too_large ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest,
+                      too_large ? "APP-REQ-413" : "APP-VAL-001", "validation",
+                      *parse_error, false, details);
           return;
         }
 
@@ -87,11 +91,15 @@ void register_chat_routes(RuntimeState &runtime_state) {
         std::string message;
         Json::Value details(Json::objectValue);
         if (const auto parse_error =
-                parse_chat_complete_request(req->getJsonObject(), message, details);
+                parse_chat_complete_request(req->getJsonObject(), message, details,
+                                            runtime_state.max_chat_message_chars());
             parse_error.has_value()) {
           LOG_ERROR << "Failed to parse chat complete request: " << *parse_error;
-          write_error(req, std::move(cb), drogon::k400BadRequest, "APP-VAL-001",
-                      "validation", *parse_error, false, details);
+          const bool too_large = details.isMember("max_chars");
+          write_error(req, std::move(cb),
+                      too_large ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest,
+                      too_large ? "APP-REQ-413" : "APP-VAL-001", "validation",
+                      *parse_error, false, details);
           return;
         }
 

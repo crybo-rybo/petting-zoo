@@ -40,6 +40,12 @@ struct RuntimeConfig {
   std::vector<std::string> model_discovery_paths = {"./uploads"};
   std::string memory_db_path = "./uploads/memory.db";
   std::vector<std::string> allowed_origins = {"http://127.0.0.1:8080", "http://localhost:8080"};
+  std::size_t max_request_body_bytes = 1024 * 1024;
+  std::size_t max_chat_message_chars = 16000;
+  bool rate_limit_enabled = true;
+  int rate_limit_window_seconds = 60;
+  int rate_limit_max_requests = 120;
+  int rate_limit_chat_max_requests = 30;
 #ifdef ZOO_ENABLE_MCP
   std::vector<McpConnectorEntry> mcp_connectors;
 #endif
@@ -77,6 +83,8 @@ class RuntimeState {
                                            std::function<void(std::string_view)> token_callback,
                                            std::string &error_code,
                                            std::string &error_message);
+
+  std::size_t max_chat_message_chars() const;
 
 #ifdef ZOO_ENABLE_MCP
   std::vector<McpConnectorEntry> list_mcp_connectors() const;

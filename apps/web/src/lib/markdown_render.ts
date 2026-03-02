@@ -24,7 +24,7 @@ const renderer = {
       '</div>'
     ].join('');
   },
-  html(token: Tokens.HTML) {
+  html(token: Tokens.HTML | Tokens.Tag) {
     // Raw HTML-like text should render literally in chat output.
     return escapeHtml(token.raw ?? token.text ?? '');
   }

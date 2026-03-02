@@ -66,8 +66,3 @@ export type McpConnectionStatus = {
   connected: boolean;
   discovered_tool_count: number;
 };
-
-export type McpRemoveResponse = {
-  status: string;
-  id: string;
-};

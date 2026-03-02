@@ -70,7 +70,8 @@ std::optional<std::string> parse_model_select_request(const JsonPtr &json,
 
 std::optional<std::string> parse_chat_complete_request(const JsonPtr &json,
                                                        std::string &message,
-                                                       Json::Value &details) {
+                                                       Json::Value &details,
+                                                       std::size_t max_message_chars) {
   if (!json || !json->isObject()) {
     return "Body must be a JSON object";
   }
@@ -85,6 +86,11 @@ std::optional<std::string> parse_chat_complete_request(const JsonPtr &json,
   if (message.empty()) {
     details["field"] = "message";
     return "Field 'message' cannot be empty";
+  }
+  if (message.size() > max_message_chars) {
+    details["field"] = "message";
+    details["max_chars"] = static_cast<Json::UInt64>(max_message_chars);
+    return "Field 'message' exceeds maximum allowed length";
   }
 
   return std::nullopt;

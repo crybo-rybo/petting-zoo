@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
-  title: Petting Zoo API (MVP)
-  version: 0.2.0
-  summary: Minimal API for local model loading and chat.
+  title: Petting Zoo API
+  version: 0.1.0
+  summary: Local-first model orchestration and chat API.
   description: |
-    MVP reset contract for the Petting Zoo application server.
-    Scope includes health, model registration/selection, and synchronous chat.
+    Contract for the Petting Zoo application server.
+    Includes health, model lifecycle, chat (sync + SSE stream), and MCP connector operations.
 servers:
   - url: http://localhost:8080
     description: Local development server
@@ -13,6 +13,7 @@ tags:
   - name: Health
   - name: Models
   - name: Chat
+  - name: MCP
 paths:
   /healthz:
     get:
@@ -39,14 +40,15 @@ paths:
                     example: petting-zoo-server
                   version:
                     type: string
-                    example: 0.2.0
+                    example: 0.1.0
                   timestamp:
                     type: string
                     format: date-time
+
   /api/models:
     get:
       tags: [Models]
-      summary: List registered model candidates and currently active model
+      summary: List model candidates and currently active model
       operationId: listModels
       parameters:
         - $ref: '#/components/parameters/XCorrelationId'
@@ -69,6 +71,9 @@ paths:
                   active_model_id:
                     type: string
                     nullable: true
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   /api/models/register:
     post:
       tags: [Models]
@@ -98,6 +103,13 @@ paths:
                     $ref: '#/components/schemas/ModelSummary'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   /api/models/select:
     post:
       tags: [Models]
@@ -131,6 +143,36 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/models/unload:
+    post:
+      tags: [Models]
+      summary: Unload the active model
+      operationId: unloadModel
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+      responses:
+        '200':
+          description: Active model unloaded
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: unloaded
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   /api/chat/complete:
     post:
       tags: [Chat]
@@ -158,8 +200,48 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '502':
           $ref: '#/components/responses/UpstreamError'
+
+  /api/chat/stream:
+    post:
+      tags: [Chat]
+      summary: Stream completion tokens from the active model as SSE
+      operationId: streamChat
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompleteRequest'
+      responses:
+        '200':
+          description: SSE event stream
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE stream with `token`, `done`, and `error` events.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
   /api/chat/reset:
     post:
       tags: [Chat]
@@ -179,6 +261,128 @@ paths:
                 $ref: '#/components/schemas/ChatResetResponse'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/chat/clear_memory:
+    post:
+      tags: [Chat]
+      summary: Wipe memory database and reinitialize memory context
+      operationId: clearMemory
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+      responses:
+        '200':
+          description: Memory cleared
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearMemoryResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/mcp/connectors:
+    get:
+      tags: [MCP]
+      summary: List configured MCP connectors
+      operationId: listMcpConnectors
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+      responses:
+        '200':
+          description: Connector inventory
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [connectors]
+                properties:
+                  connectors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/McpConnector'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/mcp/connectors/{id}/connect:
+    post:
+      tags: [MCP]
+      summary: Connect an MCP connector to the active model runtime
+      operationId: connectMcpConnector
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: MCP connector connected
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpConnectionStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/mcp/connectors/{id}/disconnect:
+    post:
+      tags: [MCP]
+      summary: Disconnect an MCP connector
+      operationId: disconnectMcpConnector
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: MCP connector disconnected
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, server_id]
+                properties:
+                  status:
+                    type: string
+                    const: disconnected
+                  server_id:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
 components:
   parameters:
     XCorrelationId:
@@ -187,15 +391,27 @@ components:
       required: false
       schema:
         type: string
+        maxLength: 128
       description: Optional request correlation ID. Generated by server when absent.
+
   headers:
     XCorrelationId:
       description: Correlation ID for tracing request flow.
       schema:
         type: string
+
   responses:
     BadRequest:
       description: Invalid request
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Forbidden
       headers:
         X-Correlation-Id:
           $ref: '#/components/headers/XCorrelationId'
@@ -221,6 +437,33 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    PayloadTooLarge:
+      description: Request payload exceeds configured limit
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: Too many requests
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Internal service failure
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     UpstreamError:
       description: Upstream runtime error
       headers:
@@ -230,6 +473,7 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+
   schemas:
     ErrorEnvelope:
       type: object
@@ -244,7 +488,7 @@ components:
               example: APP-VAL-001
             category:
               type: string
-              enum: [validation, auth, not_found, conflict, rate_limit, timeout, upstream, internal]
+              enum: [validation, auth, not_found, conflict, rate_limit, timeout, upstream, internal, server_error]
             message:
               type: string
             retryable:
@@ -254,6 +498,7 @@ components:
             details:
               type: object
               additionalProperties: true
+
     ModelSummary:
       type: object
       required: [id, display_name, path, status, context_size]
@@ -266,25 +511,35 @@ components:
           type: string
         status:
           type: string
-          enum: [available, loading, unavailable]
+          enum: [available, unavailable]
         context_size:
           type: integer
           minimum: 1
+        file_size_bytes:
+          type: integer
+          minimum: 0
+
     ModelRegisterRequest:
       type: object
       required: [path]
       properties:
         path:
           type: string
-          description: Absolute path to GGUF model file on server host.
+          minLength: 1
         display_name:
           type: string
+
     ModelSelectRequest:
       type: object
       required: [model_id]
       properties:
         model_id:
           type: string
+          minLength: 1
+        context_size:
+          type: integer
+          minimum: 1
+
     ChatCompleteRequest:
       type: object
       required: [message]
@@ -292,7 +547,10 @@ components:
         message:
           type: string
           minLength: 1
-    Usage:
+          maxLength: 16000
+          description: Maximum length is server-configurable.
+
+    ChatUsage:
       type: object
       required: [prompt_tokens, completion_tokens, total_tokens]
       properties:
@@ -305,7 +563,8 @@ components:
         total_tokens:
           type: integer
           minimum: 0
-    Metrics:
+
+    ChatMetrics:
       type: object
       required: [latency_ms, time_to_first_token_ms, tokens_per_second]
       properties:
@@ -318,6 +577,7 @@ components:
         tokens_per_second:
           type: number
           minimum: 0
+
     ChatCompleteResponse:
       type: object
       required: [text, usage, metrics]
@@ -325,9 +585,10 @@ components:
         text:
           type: string
         usage:
-          $ref: '#/components/schemas/Usage'
+          $ref: '#/components/schemas/ChatUsage'
         metrics:
-          $ref: '#/components/schemas/Metrics'
+          $ref: '#/components/schemas/ChatMetrics'
+
     ChatResetResponse:
       type: object
       required: [status, model_id]
@@ -337,3 +598,38 @@ components:
           const: cleared
         model_id:
           type: string
+
+    ClearMemoryResponse:
+      type: object
+      required: [status, model_id]
+      properties:
+        status:
+          type: string
+          const: memory_wiped
+        model_id:
+          type: string
+
+    McpConnector:
+      type: object
+      required: [id, command, args]
+      properties:
+        id:
+          type: string
+        command:
+          type: string
+        args:
+          type: array
+          items:
+            type: string
+
+    McpConnectionStatus:
+      type: object
+      required: [server_id, connected, discovered_tool_count]
+      properties:
+        server_id:
+          type: string
+        connected:
+          type: boolean
+        discovered_tool_count:
+          type: integer
+          minimum: 0

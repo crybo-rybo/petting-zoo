@@ -4,9 +4,69 @@
 #include <filesystem>
 #include <cstring>
 #include <string>
+#include <string_view>
+#include <chrono>
+#include <mutex>
+#include <unordered_map>
 
+#include "http_helpers.hpp"
 #include "routes.hpp"
 #include "runtime_state.hpp"
+
+namespace {
+
+struct RateLimitBucket {
+  std::chrono::steady_clock::time_point window_start{};
+  int request_count = 0;
+};
+
+class SlidingWindowRateLimiter {
+ public:
+  bool allow(const std::string &key, int window_seconds, int max_requests) {
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(mu_);
+    auto &bucket = buckets_[key];
+    if (bucket.window_start.time_since_epoch().count() == 0 ||
+        now - bucket.window_start >= std::chrono::seconds(window_seconds)) {
+      bucket.window_start = now;
+      bucket.request_count = 0;
+    }
+    bucket.request_count += 1;
+    return bucket.request_count <= max_requests;
+  }
+
+ private:
+  std::mutex mu_;
+  std::unordered_map<std::string, RateLimitBucket> buckets_;
+};
+
+drogon::HttpResponsePtr build_json_error(const drogon::HttpRequestPtr &req,
+                                         drogon::HttpStatusCode status,
+                                         std::string code,
+                                         std::string category,
+                                         std::string message,
+                                         bool retryable) {
+  Json::Value payload(Json::objectValue);
+  payload["code"] = std::move(code);
+  payload["category"] = std::move(category);
+  payload["message"] = std::move(message);
+  payload["retryable"] = retryable;
+  payload["correlation_id"] = resolve_correlation_id(req);
+
+  Json::Value root(Json::objectValue);
+  root["error"] = payload;
+
+  auto resp = drogon::HttpResponse::newHttpResponse();
+  write_json(req, resp, root, status);
+  return resp;
+}
+
+bool route_starts_with(const std::string &route, std::string_view prefix) {
+  return route.size() >= prefix.size() &&
+         std::equal(prefix.begin(), prefix.end(), route.begin());
+}
+
+}  // namespace
 
 RuntimeConfig load_config(const std::string& config_path, int& port, std::string& host, trantor::Logger::LogLevel& log_level) {
   RuntimeConfig config;
@@ -32,6 +92,42 @@ RuntimeConfig load_config(const std::string& config_path, int& port, std::string
     const auto& server = root["server"];
     if (server.isMember("host") && server["host"].isString()) host = server["host"].asString();
     if (server.isMember("port") && server["port"].isInt()) port = server["port"].asInt();
+    if (server.isMember("max_request_body_bytes") && server["max_request_body_bytes"].isUInt64()) {
+      config.max_request_body_bytes = static_cast<std::size_t>(server["max_request_body_bytes"].asUInt64());
+    }
+    if (server.isMember("max_chat_message_chars") && server["max_chat_message_chars"].isUInt64()) {
+      config.max_chat_message_chars = static_cast<std::size_t>(server["max_chat_message_chars"].asUInt64());
+    }
+    if (server.isMember("rate_limit") && server["rate_limit"].isObject()) {
+      const auto &rate_limit = server["rate_limit"];
+      if (rate_limit.isMember("enabled") && rate_limit["enabled"].isBool()) {
+        config.rate_limit_enabled = rate_limit["enabled"].asBool();
+      }
+      if (rate_limit.isMember("window_seconds") && rate_limit["window_seconds"].isInt()) {
+        config.rate_limit_window_seconds = rate_limit["window_seconds"].asInt();
+      }
+      if (rate_limit.isMember("max_requests") && rate_limit["max_requests"].isInt()) {
+        config.rate_limit_max_requests = rate_limit["max_requests"].asInt();
+      }
+      if (rate_limit.isMember("chat_max_requests") && rate_limit["chat_max_requests"].isInt()) {
+        config.rate_limit_chat_max_requests = rate_limit["chat_max_requests"].asInt();
+      }
+    }
+  }
+  if (config.max_request_body_bytes == 0) {
+    config.max_request_body_bytes = 1024 * 1024;
+  }
+  if (config.max_chat_message_chars == 0) {
+    config.max_chat_message_chars = 16000;
+  }
+  if (config.rate_limit_window_seconds <= 0) {
+    config.rate_limit_window_seconds = 60;
+  }
+  if (config.rate_limit_max_requests <= 0) {
+    config.rate_limit_max_requests = 120;
+  }
+  if (config.rate_limit_chat_max_requests <= 0) {
+    config.rate_limit_chat_max_requests = 30;
   }
   
   if (const char* env_port = std::getenv("PORT")) {
@@ -120,6 +216,7 @@ int main(int argc, char** argv) {
 
   drogon::app().setLogLevel(log_level);
   drogon::app().setDocumentRoot(web_root.string());
+  drogon::app().setClientMaxBodySize(config.max_request_body_bytes);
 
   register_health_routes();
   register_model_routes(runtime_state);
@@ -130,6 +227,7 @@ int main(int argc, char** argv) {
 
   LOG_INFO << "Starting server on " << host << ":" << port;
 
+  static SlidingWindowRateLimiter rate_limiter;
   drogon::app().registerPreRoutingAdvice([&config](const drogon::HttpRequestPtr &req, drogon::FilterCallback &&defer, drogon::FilterChainCallback &&chain) {
     auto origin = req->getHeader("origin");
     if (!origin.empty()) {
@@ -142,10 +240,8 @@ int main(int argc, char** argv) {
       }
       if (!allowed) {
         LOG_WARN << "CORS origin rejected: " << origin;
-        auto resp = drogon::HttpResponse::newHttpResponse();
-        resp->setStatusCode(drogon::k403Forbidden);
-        resp->setBody("Forbidden Origin");
-        defer(resp);
+        defer(build_json_error(req, drogon::k403Forbidden, "APP-SEC-403", "auth",
+                               "Forbidden Origin", false));
         return;
       }
     }
@@ -160,6 +256,30 @@ int main(int argc, char** argv) {
       defer(resp);
       return;
     }
+
+    if (req->body().size() > config.max_request_body_bytes) {
+      LOG_WARN << "Request body too large, size=" << req->body().size();
+      defer(build_json_error(req, drogon::k413RequestEntityTooLarge, "APP-REQ-413",
+                             "validation", "Request payload exceeds configured limit", false));
+      return;
+    }
+
+    if (config.rate_limit_enabled) {
+      const auto route = req->path();
+      const bool chat_route =
+          route_starts_with(route, "/api/chat/complete") || route_starts_with(route, "/api/chat/stream");
+      const int max_requests =
+          chat_route ? config.rate_limit_chat_max_requests : config.rate_limit_max_requests;
+      const auto client_ip = req->peerAddr().toIp();
+      const std::string bucket_key = client_ip + "|" + (chat_route ? "chat" : "default");
+      if (!rate_limiter.allow(bucket_key, config.rate_limit_window_seconds, max_requests)) {
+        LOG_WARN << "Rate limit exceeded for " << client_ip << " route=" << route;
+        defer(build_json_error(req, drogon::k429TooManyRequests, "APP-RATE-429",
+                               "rate_limit", "Too many requests", true));
+        return;
+      }
+    }
+
     chain();
   });
 

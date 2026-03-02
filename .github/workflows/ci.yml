@@ -9,7 +9,12 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
 
     steps:
@@ -22,17 +27,44 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
 
       - name: Install Linux build deps
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libjsoncpp-dev uuid-dev
+
+      - name: Install macOS build deps
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install jsoncpp
+
+      - name: Install web dependencies
+        run: npm --prefix apps/web ci
+
+      - name: Web lint and typecheck
+        run: npm --prefix apps/web run lint
+
+      - name: Web unit tests
+        run: npm --prefix apps/web run test -- --run --reporter=dot
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPETTING_ZOO_BUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build -j 2
+        run: cmake --build build --parallel
 
-      - name: Test
+      - name: CTest
         run: ctest --test-dir build --output-on-failure
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.os }}
+          path: |
+            build/Testing/**
+            apps/web/test-results/**

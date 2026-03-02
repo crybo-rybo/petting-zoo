@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+
+  import Modal from './components/Modal.svelte';
   import { connectMcpConnector, disconnectMcpConnector, listMcpConnectors } from './features/mcp/service';
   import type { McpConnectionStatus, McpConnector } from './shared/api/types';
 
   export let activeModelId: string | null = null;
   export let busy = false;
 
-  // State
   let connectors: McpConnector[] = [];
   let connectionStatuses: Record<string, McpConnectionStatus> = {};
 
@@ -14,11 +15,14 @@
   let isLoading = false;
   let isMcpModalOpen = false;
 
-  $: activeConnections = Object.values(connectionStatuses).filter(s => s.connected);
+  $: activeConnections = Object.values(connectionStatuses).filter((s) => s.connected);
   $: totalTools = activeConnections.reduce((sum, s) => sum + s.discovered_tool_count, 0);
-  $: summaryText = activeConnections.length > 0
-    ? `${activeConnections.length}/${connectors.length} enabled, ${totalTools} tool(s)`
-    : (connectors.length > 0 ? `${connectors.length} server(s), none enabled` : 'No servers configured');
+  $: summaryText =
+    activeConnections.length > 0
+      ? `${activeConnections.length}/${connectors.length} enabled, ${totalTools} tool(s)`
+      : connectors.length > 0
+        ? `${connectors.length} server(s), none enabled`
+        : 'No servers configured';
 
   async function loadConnectors() {
     try {
@@ -39,9 +43,7 @@
     try {
       isLoading = true;
       mcpError = '';
-
       const status = await connectMcpConnector(id);
-
       connectionStatuses = {
         ...connectionStatuses,
         [id]: status
@@ -57,9 +59,7 @@
     try {
       isLoading = true;
       mcpError = '';
-
       await disconnectMcpConnector(id);
-
       connectionStatuses = {
         ...connectionStatuses,
         [id]: { server_id: id, connected: false, discovered_tool_count: 0 }
@@ -71,7 +71,6 @@
     }
   }
 
-  // When activeModelId changes to null, all MCP servers are implicitly disconnected
   $: {
     if (!activeModelId && Object.keys(connectionStatuses).length > 0) {
       connectionStatuses = {};
@@ -79,11 +78,11 @@
   }
 
   onMount(() => {
-    loadConnectors();
+    void loadConnectors();
   });
 </script>
 
-<button class="ghost tab-btn" on:click={() => isMcpModalOpen = true}>
+<button class="ghost tab-btn" type="button" on:click={() => (isMcpModalOpen = true)}>
   <span class="tab-icon">🔫</span>
   <div class="tab-info">
     <span class="tab-label">MCP Connectors</span>
@@ -91,62 +90,51 @@
   </div>
 </button>
 
-{#if isMcpModalOpen}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="modal-backdrop fade-in" on:click={() => isMcpModalOpen = false}>
-    <div class="modal-content slide-up" on:click|stopPropagation>
-      <div class="modal-header">
-        <h3>MCP Connectors</h3>
-        <button class="ghost action-btn" on:click={() => isMcpModalOpen = false}>✕</button>
-      </div>
+<Modal open={isMcpModalOpen} title="MCP Connectors" closeLabel="Close MCP connectors" on:close={() => (isMcpModalOpen = false)}>
+  <div class="mcp-content">
+    {#if mcpError}
+      <p class="error-text slide-up">{mcpError}</p>
+    {/if}
 
-      <div class="mcp-content">
-        {#if mcpError}
-          <p class="error-text slide-up">{mcpError}</p>
-        {/if}
-
-        <div class="connectors-list">
-          {#if connectors.length === 0}
-            <p class="empty-list">No MCP servers configured. Add entries to <span class="mono">config/app.json</span> and restart.</p>
-          {:else}
-            {#each connectors as connector (connector.id)}
-              {@const status = connectionStatuses[connector.id]}
-              {@const isConnected = status?.connected ?? false}
-              <div class="connector-item {isConnected ? 'connected' : ''}">
-                <div class="connector-info">
-                  <span class="connector-id">{connector.id}</span>
-                  {#if isConnected}
-                    <span class="tool-count badge-success">
-                      {status.discovered_tool_count} tool{status.discovered_tool_count !== 1 ? 's' : ''}
-                    </span>
-                  {:else}
-                    <span class="status-badge badge-idle">disabled</span>
-                  {/if}
-                </div>
-                <div class="connector-actions">
-                  {#if isConnected}
-                    <button class="danger ghost btn-small" on:click={() => disableMcp(connector.id)} disabled={busy || isLoading}>
-                      Disable
-                    </button>
-                  {:else}
-                    <button class="primary ghost btn-small" on:click={() => enableMcp(connector.id)} disabled={busy || isLoading}>
-                      Enable
-                    </button>
-                  {/if}
-                </div>
-              </div>
-            {/each}
-          {/if}
-        </div>
-
-        {#if connectors.length > 0 && !activeModelId}
-          <p class="hint-text">Load a model to enable MCP servers.</p>
-        {/if}
-      </div>
+    <div class="connectors-list">
+      {#if connectors.length === 0}
+        <p class="empty-list">No MCP servers configured. Add entries to <span class="mono">config/app.json</span> and restart.</p>
+      {:else}
+        {#each connectors as connector (connector.id)}
+          {@const status = connectionStatuses[connector.id]}
+          {@const isConnected = status?.connected ?? false}
+          <div class="connector-item {isConnected ? 'connected' : ''}">
+            <div class="connector-info">
+              <span class="connector-id">{connector.id}</span>
+              {#if isConnected}
+                <span class="tool-count badge-success">
+                  {status.discovered_tool_count} tool{status.discovered_tool_count !== 1 ? 's' : ''}
+                </span>
+              {:else}
+                <span class="status-badge badge-idle">disabled</span>
+              {/if}
+            </div>
+            <div class="connector-actions">
+              {#if isConnected}
+                <button class="danger ghost btn-small" type="button" on:click={() => disableMcp(connector.id)} disabled={busy || isLoading}>
+                  Disable
+                </button>
+              {:else}
+                <button class="primary ghost btn-small" type="button" on:click={() => enableMcp(connector.id)} disabled={busy || isLoading}>
+                  Enable
+                </button>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      {/if}
     </div>
+
+    {#if connectors.length > 0 && !activeModelId}
+      <p class="hint-text">Load a model to enable MCP servers.</p>
+    {/if}
   </div>
-{/if}
+</Modal>
 
 <style>
   .mcp-content {
@@ -259,11 +247,22 @@
     padding-right: 0.5rem;
   }
 
-  /* Custom Scrollbar */
-  .connectors-list::-webkit-scrollbar { width: 8px; }
-  .connectors-list::-webkit-scrollbar-track { background: transparent; }
-  .connectors-list::-webkit-scrollbar-thumb { background: var(--border-main); border-radius: 0px; }
-  .connectors-list::-webkit-scrollbar-thumb:hover { background: var(--accent-orange); }
+  .connectors-list::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .connectors-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .connectors-list::-webkit-scrollbar-thumb {
+    background: var(--border-main);
+    border-radius: 0;
+  }
+
+  .connectors-list::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-orange);
+  }
 
   .empty-list {
     margin: 0;
@@ -278,64 +277,57 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #ffffff;
+    padding: 0.7rem 0.8rem;
     border: 2px solid var(--border-main);
-    box-shadow: 2px 2px 0px var(--border-main);
-    padding: 0.6rem 0.75rem;
+    background: var(--bg-base);
     border-radius: 4px;
-    transition: border-color 0.15s ease;
   }
 
   .connector-item.connected {
-    border-color: #155724;
-    box-shadow: 2px 2px 0px #155724;
+    border-color: var(--accent-orange);
+    background: #fef3ea;
   }
 
   .connector-info {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    overflow: hidden;
+    min-width: 0;
   }
 
   .connector-id {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.82rem;
     font-weight: 700;
-    font-size: 0.9rem;
     color: var(--text-main);
+  }
+
+  .status-badge,
+  .tool-count {
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid;
+  }
+
+  .badge-idle {
+    color: var(--text-muted);
+    border-color: #b5beb2;
+    background: #ece8dc;
+  }
+
+  .badge-success {
+    color: #91552f;
+    border-color: #d4a37f;
+    background: #fde6d6;
   }
 
   .connector-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    flex-shrink: 0;
-  }
-
-  .badge-success {
-    background: #d4edda;
-    color: #155724;
-    border: 2px solid #155724;
-    font-size: 0.7rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    white-space: nowrap;
-    font-weight: 700;
-  }
-
-  .badge-idle {
-    background: #f0ede4;
-    color: var(--text-muted);
-    border: 2px solid #c5c0b0;
-    font-size: 0.7rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    white-space: nowrap;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .mono {
-    font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+    justify-content: flex-end;
   }
 </style>

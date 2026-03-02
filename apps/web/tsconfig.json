@@ -1,13 +1,15 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    "lib": ["ESNext", "DOM"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
+    "skipLibCheck": true,
     "allowJs": false,
     "checkJs": false,
     "isolatedModules": true,
-    "types": ["vite/client", "vitest/globals"]
+    "types": ["vite/client", "vitest/globals", "node"]
   },
   "include": ["src/**/*.ts", "src/**/*.svelte"]
 }

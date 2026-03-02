@@ -166,32 +166,32 @@ No rate limiting on any endpoint. Inference endpoints (`/api/chat/complete`, `/a
 
 ## 4. Cleanup
 
-### 4.1 Remove `test_memory.py`
-Committed ad-hoc script with hardcoded user-specific path (`/Users/conorrybacki/.models/...`). Not integrated into test suite. Remove or move to a `scripts/` directory with parameterization.
+### ~~4.1 Remove `test_memory.py`~~ ✅
+*Addressed. `test_memory.py` is no longer present in the repository.*
 
-### 4.2 Remove Stale Documentation References
-`AGENTS.md` references nonexistent `APPLICATION_PLAN.md` and directories (`include/zoo_app/`, `src/zoo_app/`). Update or remove.
+### ~~4.2 Remove Stale Documentation References~~ ✅
+*Addressed. `AGENTS.md` no longer references `APPLICATION_PLAN.md`, `include/zoo_app/`, or `src/zoo_app/`.*
 
-### 4.3 Update CLAUDE.md Frontend Description
-States "Single-component SPA (App.svelte)" — now also includes `McpPanel.svelte` and a `features/`+`shared/` service layer.
+### ~~4.3 Update CLAUDE.md Frontend Description~~ ✅
+*Addressed. `CLAUDE.md` now describes `App.svelte` + `McpPanel.svelte` and the `features/` + `shared/api/` structure.*
 
-### 4.4 Database Uses Relative Path
-**`apps/server/src/runtime_state.cpp:28`** — `"uploads/memory.db"` resolves relative to CWD. If the server is started from an unexpected directory, the database appears in the wrong location. Use an absolute path derived from config or the executable's location.
+### ~~4.4 Database Uses Relative Path~~ ✅
+*Addressed. Memory DB path is now configurable and resolved to an absolute path at startup.*
 
-### 4.5 Empty `.vscode/settings.json`
-Contains only `{}`. Either add useful workspace settings or remove and gitignore the directory.
+### ~~4.5 Empty `.vscode/settings.json`~~ ✅
+*Addressed. `.vscode/settings.json` is not present.*
 
-### 4.6 Drogon FetchContent Not Hash-Pinned
-**`cmake/FetchDependencies.cmake:17-22`** — Uses `GIT_TAG v1.9.12` without a commit SHA. If the tag is ever force-pushed, the build silently pulls different code. Pin to the specific commit hash.
+### ~~4.6 Drogon FetchContent Not Hash-Pinned~~ ✅
+*Addressed. Drogon is pinned to commit `89aca8c7993c8194f2c109c1d06a3b45bf363d5d` (`v1.9.12`).*
 
-### 4.7 Unnecessary SQLite in Drogon Build
-**`cmake/FetchDependencies.cmake:16`** — `BUILD_SQLITE ON` is set for Drogon, but the server uses zoo-keeper's SQLite, not Drogon's ORM. Adds build time and binary size for no benefit.
+### ~~4.7 Unnecessary SQLite in Drogon Build~~ ✅
+*Addressed. Drogon `BUILD_SQLITE` is set to `OFF`.*
 
-### 4.8 `ChatMessage` Type Defined Inline
-**`apps/web/src/App.svelte:53`** — Should live in `shared/api/types.ts` alongside other shared types.
+### ~~4.8 `ChatMessage` Type Defined Inline~~ ✅
+*Addressed. `ChatMessage` now lives in `apps/web/src/shared/api/types.ts` and is imported by `App.svelte`.*
 
-### 4.9 `token: any` in Markdown Renderer
-**`apps/web/src/lib/markdown_render.ts:14,27`** — Loses type safety. Use `marked.Tokens.Code` and `marked.Tokens.HTML` respectively.
+### ~~4.9 `token: any` in Markdown Renderer~~ ✅
+*Addressed. Markdown renderer now uses strict `Tokens.Code` and `Tokens.HTML` types from `marked`.*
 
-### 4.10 Correlation ID Not Length-Bounded
-**`apps/server/src/http_helpers.cpp:42-48`** — Client-supplied `X-Correlation-Id` is reflected verbatim with no length limit. Cap at a reasonable length (e.g., 128 chars).
+### ~~4.10 Correlation ID Not Length-Bounded~~ ✅
+*Addressed. `X-Correlation-Id` is now length-capped to 128 characters.*

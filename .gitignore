@@ -15,7 +15,8 @@ dist/
 
 # Large files
 *.gguf
-models/
+models/*
+!models/.gitkeep
 
 # Environment and temp
 .env

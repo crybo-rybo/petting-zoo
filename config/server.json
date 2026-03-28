@@ -1,0 +1,31 @@
+{
+  "bind": "0.0.0.0:8080",
+  "model_id": "local-model",
+  "api_key": null,
+  "http": {
+    "max_body_size": 1048576,
+    "memory_body_limit": 65536,
+    "idle_timeout": 60
+  },
+  "session": {
+    "max_concurrent": 1,
+    "inactive_timeout": 900
+  },
+  "zoo": {
+    "model_path": "/models/model.gguf",
+    "context_size": 2048,
+    "gpu_layers": 0,
+    "system_message": "You are a helpful assistant.",
+    "sampling": {
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "top_k": 40,
+      "repeat_penalty": 1.1
+    },
+    "mmap": true,
+    "mlock": false,
+    "max_message_history": 64,
+    "request_queue_capacity": 64
+  },
+  "tools": []
+}

@@ -1,0 +1,27 @@
+# --- Build stage ---
+FROM ubuntu:24.04 AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git ca-certificates uuid-dev libjsoncpp-dev \
+    libssl-dev zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY zoo-keeper-server/ .
+
+RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build --parallel
+
+# --- Runtime stage ---
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libjsoncpp25 libssl3t64 libuuid1 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /src/build/zoo_keeper_server /usr/local/bin/zoo_keeper_server
+COPY config/server.json /etc/zoo-keeper-server/server.json
+
+EXPOSE 8080
+
+ENTRYPOINT ["zoo_keeper_server", "/etc/zoo-keeper-server/server.json"]

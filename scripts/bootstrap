@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Initialize submodules and install frontend dependencies
+git submodule update --init --recursive
+npm ci

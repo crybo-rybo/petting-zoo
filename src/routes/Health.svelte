@@ -28,13 +28,17 @@
     if (intervalId) clearInterval(intervalId)
   })
 
-  const statusText = $derived(
-    error ? 'Unreachable' : health?.ready ? 'Ready' : 'Starting'
-  )
+  const statusText = $derived.by(() => {
+    if (error) return 'Unreachable'
+    if (health && health.ready) return 'Ready'
+    return 'Starting'
+  })
 
-  const statusClass = $derived(
-    error ? 'red' : health?.ready ? 'green' : 'yellow'
-  )
+  const statusClass = $derived.by(() => {
+    if (error) return 'red'
+    if (health && health.ready) return 'green'
+    return 'yellow'
+  })
 </script>
 
 <div class="health-dashboard">

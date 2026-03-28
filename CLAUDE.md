@@ -1,81 +1,100 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+<constraints>
+- NEVER modify files inside `zoo-keeper-server/` — it is a read-only git submodule
+- NEVER commit `.env` files, model files (`.gguf`), or `node_modules/`
+- ALWAYS run `./scripts/test` and confirm all tests pass before committing
+- ALWAYS use Svelte 5 runes (`$state`, `$derived`, `$effect`), not legacy stores
+- ALWAYS co-locate tests next to source: `foo.test.ts` beside `foo.ts`
+</constraints>
 
-## Project Overview
+## WHAT
 
-Petting Zoo is a Svelte frontend client for [zoo-keeper-server](https://github.com/crybo-rybo/zoo-keeper-server), a C++ HTTP server for local LLM inference. This repo contains only the frontend — the server is included as a git submodule and runs via Docker.
+Petting Zoo is a Svelte 5 frontend client for zoo-keeper-server, a C++ HTTP server
+for local LLM inference. This repo is **frontend-only**. The server is a git submodule
+built and run via Docker.
 
-## Quick Start
+See `AGENTS.md` for the full cross-tool agent reference (commands, project structure,
+API contract, boundaries). See `spec.md` for the living project specification.
+
+## WHY
+
+The frontend is decoupled from the inference engine. zoo-keeper-server is complex C++
+with its own CMake build system; petting-zoo is a lightweight Svelte app that talks to
+it over HTTP. This separation lets each evolve independently.
+
+## HOW
+
+### Quick Start
 
 ```bash
-# Initialize submodules (required on first clone)
-git submodule update --init --recursive
+# First-time setup
+./scripts/bootstrap
 
-# Run with Docker Compose (server + frontend)
+# Full stack via Docker (server + frontend)
 docker compose up --build
+# Frontend: http://localhost:5173  |  Server API: http://localhost:8080
 
-# Frontend: http://localhost:5173
-# Server API: http://localhost:8080
+# Frontend-only development (requires zoo-keeper-server on localhost:8080)
+npm run dev
 ```
 
-## Development (Frontend Only)
+### Verification Commands
 
 ```bash
-# Install dependencies
-npm ci
-
-# Start dev server (requires zoo-keeper-server running on localhost:8080)
-npm run dev
-
-# Run tests
-npx vitest run
-
-# Build for production
-npm run build
+./scripts/test        # Run all unit tests
+./scripts/typecheck   # TypeScript + Svelte type checking
+npm run build         # Production build
 ```
 
-## Architecture
+### Adding a Feature
 
-- **Frontend**: Svelte 5 + Vite + TypeScript at the repo root (`src/`)
+Follow the vertical slice pattern:
+
+1. Define types in `src/lib/api/types.ts` (or a new feature directory)
+2. Write the API client function with a co-located test
+3. Build the Svelte component in `src/routes/`
+4. Verify: `./scripts/test && ./scripts/typecheck`
+
+### Architecture
+
+- **Frontend**: Svelte 5 + Vite + TypeScript at repo root (`src/`)
 - **Server**: zoo-keeper-server git submodule, built via `Dockerfile.server`
 - **Orchestration**: Docker Compose runs both services together
 
-### Frontend Structure (`src/`)
+### Frontend Structure
 
-- `App.svelte` — Root component
-- `routes/` — Page components (e.g., `Health.svelte`)
-- `lib/api/client.ts` — Typed HTTP client for zoo-keeper-server API
-- `lib/api/types.ts` — TypeScript interfaces for API responses
+```
+src/
+  main.ts              — App entry point, mounts App.svelte
+  App.svelte           — Root component
+  app.css              — Global styles (dark theme)
+  lib/api/
+    client.ts          — Typed HTTP client (fetchHealth, etc.)
+    client.test.ts     — Co-located unit tests
+    types.ts           — API response interfaces (HealthResponse, etc.)
+  routes/
+    Health.svelte      — Health dashboard with 5s auto-polling
+```
 
-### Server API (zoo-keeper-server)
+### Server API Endpoints
 
-The frontend communicates with these endpoints via Vite proxy:
-
-- `GET /healthz` — Server health check
-- `GET /v1/models` — List available models
-- `POST /v1/sessions` — Create a chat session
-- `POST /v1/chat/completions` — Chat completion (streaming supported)
-- `GET /metrics` — Server metrics
+| Method | Path                   | Purpose                     |
+|--------|------------------------|-----------------------------|
+| GET    | `/healthz`             | Server health check         |
+| GET    | `/v1/models`           | List available models       |
+| POST   | `/v1/sessions`         | Create a chat session       |
+| POST   | `/v1/chat/completions` | Chat completion (streaming) |
+| GET    | `/metrics`             | Prometheus metrics          |
 
 ### Vite Proxy
 
-`vite.config.ts` proxies `/healthz`, `/v1/*`, and `/metrics` to the server. The target URL is controlled by the `VITE_API_URL` env var (default: `http://localhost:8080`). Docker Compose sets this to `http://server:8080`.
+`vite.config.ts` proxies `/healthz`, `/v1/*`, and `/metrics` to the server.
+Target URL is `VITE_API_URL` (default: `http://localhost:8080`).
+Docker Compose sets this to `http://server:8080`.
 
-## Testing
+### Testing
 
-```bash
-# Run all tests
-npx vitest run
-
-# Watch mode
-npx vitest
-```
-
-Tests live in `tests/` mirroring the `src/` structure.
-
-## Development Workflow
-
-- This repo is frontend-only. Core inference logic lives in zoo-keeper-server.
-- Add features as vertical slices: API types → client function → component → test.
-- Keep components focused — one component per route/feature.
+- Framework: Vitest 3 with mocked `fetch` and dynamic `await import()` for module reset
+- Tests are co-located with source files (`*.test.ts` next to the code they test)
+- Run a single test: `npx vitest run src/path/to/file.test.ts`

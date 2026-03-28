@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run TypeScript and Svelte type checking
+# --workspace src scopes checking to frontend source only
+# Note: svelte-check may print harmless mdsvex warnings from the submodule's
+# vendored llama.cpp svelte config — these do not affect the exit code.
+npx svelte-check --tsconfig ../tsconfig.json --workspace src

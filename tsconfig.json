@@ -10,5 +10,6 @@
     "isolatedModules": true,
     "moduleDetection": "force"
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "src/vite-env.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "src/vite-env.d.ts"],
+  "exclude": ["node_modules", "zoo-keeper-server"]
 }

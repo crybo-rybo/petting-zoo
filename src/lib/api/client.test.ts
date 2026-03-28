@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { HealthResponse } from '../../../src/lib/api/types'
+import type { HealthResponse } from './types'
 
 // Will import once implemented
-// import { fetchHealth } from '../../../src/lib/api/client'
+// import { fetchHealth } from './client'
 
 describe('fetchHealth', () => {
   const mockHealth: HealthResponse = {
@@ -25,7 +25,7 @@ describe('fetchHealth', () => {
       new Response(JSON.stringify(mockHealth), { status: 200 })
     )
 
-    const { fetchHealth } = await import('../../../src/lib/api/client')
+    const { fetchHealth } = await import('./client')
     const result = await fetchHealth()
 
     expect(fetch).toHaveBeenCalledWith('/healthz')
@@ -37,14 +37,14 @@ describe('fetchHealth', () => {
       new Response('Service Unavailable', { status: 503 })
     )
 
-    const { fetchHealth } = await import('../../../src/lib/api/client')
+    const { fetchHealth } = await import('./client')
     await expect(fetchHealth()).rejects.toThrow('Health check failed: 503')
   })
 
   it('throws on network error', async () => {
     vi.mocked(fetch).mockRejectedValue(new TypeError('Failed to fetch'))
 
-    const { fetchHealth } = await import('../../../src/lib/api/client')
+    const { fetchHealth } = await import('./client')
     await expect(fetchHealth()).rejects.toThrow('Failed to fetch')
   })
 })

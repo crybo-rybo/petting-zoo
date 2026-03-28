@@ -1,17 +1,9 @@
-/build/
-/.DS_Store
-
-apps/web/node_modules/
-apps/web/dist/
-
-# Svelte/Vite
-node_modules/
+# Build output
 dist/
 *.local
 
-# SQLite databases
-*.db
-*.sqlite
+# Dependencies
+node_modules/
 
 # Large files
 *.gguf
@@ -19,11 +11,10 @@ models/*
 !models/.gitkeep
 
 # Environment and temp
+.DS_Store
 .env
 .env.*
 .cache/
 .vscode/
 tmp/
-uploads/
-config/app.json
 *.log

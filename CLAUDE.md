@@ -4,93 +4,78 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Petting Zoo is an application layer built on top of the [`zoo-keeper`](https://github.com/crybo-rybo/zoo-keeper.git) C++ library (included as a git submodule). It provides:
-- A Drogon-based C++ API server
-- A Svelte + TypeScript single-page web UI
-- Local GGUF model registration/loading from the server filesystem
-- Synchronous chat with the active loaded model
+Petting Zoo is a Svelte frontend client for [zoo-keeper-server](https://github.com/crybo-rybo/zoo-keeper-server), a C++ HTTP server for local LLM inference. This repo contains only the frontend — the server is included as a git submodule and runs via Docker.
 
-**Key principle**: Core inference/runtime logic lives in `zoo-keeper`. This repo handles API hosting, UI, app state, and orchestration only.
-
-## Build Commands
+## Quick Start
 
 ```bash
-# Initialize submodule (required on first clone)
+# Initialize submodules (required on first clone)
 git submodule update --init --recursive
 
-# Configure and build
-cmake -S . -B build
-cmake --build build -j
+# Run with Docker Compose (server + frontend)
+docker compose up --build
 
-# Configure with tests enabled
-cmake -S . -B build -DPETTING_ZOO_BUILD_TESTS=ON
-cmake --build build -j
-
-# Run the server
-./build/apps/server/petting_zoo_server
-# Server listens on http://127.0.0.1:8080
+# Frontend: http://localhost:5173
+# Server API: http://localhost:8080
 ```
 
-CMake automatically runs `npm ci && npm run build` in `apps/web` to produce frontend assets. If npm fails, fallback assets in `apps/web/fallback-dist/` are served.
-
-## Test Commands
+## Development (Frontend Only)
 
 ```bash
-# Run all tests (C++ unit + server smoke + frontend unit)
-ctest --test-dir build --output-on-failure
+# Install dependencies
+npm ci
 
-# Shortcut target
-cmake --build build --target check
+# Start dev server (requires zoo-keeper-server running on localhost:8080)
+npm run dev
 
-# Frontend tests only (from apps/web/)
-npm run test -- --run
+# Run tests
+npx vitest run
 
-# Frontend tests in watch mode (from apps/web/)
-npm run test
+# Build for production
+npm run build
 ```
-
-Tests include:
-- `cpp_config_sanity`: C++ sanity test linking against `zoo`
-- `server_smoke`: Integration test using `curl` against the live server binary
-- `web_unit_tests`: Vitest unit tests in `apps/web/`
 
 ## Architecture
 
-### C++ Server (`apps/server/src/`)
+- **Frontend**: Svelte 5 + Vite + TypeScript at the repo root (`src/`)
+- **Server**: zoo-keeper-server git submodule, built via `Dockerfile.server`
+- **Orchestration**: Docker Compose runs both services together
 
-The server is structured around a shared `RuntimeState` singleton (mutex-protected) that holds the model registry and active `zoo::Agent`. Route registration is split by domain:
+### Frontend Structure (`src/`)
 
-- `runtime_state.{hpp,cpp}` — central state: model registry (`unordered_map`), active model ID, `zoo::Agent` instance
-- `routes_health.cpp` — `GET /healthz`
-- `routes_models.cpp` — `GET /api/models`, `POST /api/models/register`, `POST /api/models/select`
-- `routes_chat.cpp` — `POST /api/chat/complete`, `POST /api/chat/reset`
-- `routes_deferred.cpp` — stub handlers returning 501 for future endpoints
-- `routes_spa.cpp` — SPA fallback (serves `index.html` for unmatched routes)
-- `api_parsers.{hpp,cpp}` — JSON request body parsing
-- `api_serialization.{hpp,cpp}` — JSON response serialization
-- `http_helpers.{hpp,cpp}` — shared HTTP utilities
+- `App.svelte` — Root component
+- `routes/` — Page components (e.g., `Health.svelte`)
+- `lib/api/client.ts` — Typed HTTP client for zoo-keeper-server API
+- `lib/api/types.ts` — TypeScript interfaces for API responses
 
-The web root path is baked in at compile time via the `PETTING_ZOO_WEB_ROOT` definition.
+### Server API (zoo-keeper-server)
 
-### Dependencies
+The frontend communicates with these endpoints via Vite proxy:
 
-- **Drogon** (v1.9.12): HTTP framework, fetched via CMake FetchContent if not found system-wide
-- **zoo-keeper** (`zoo`, `zoo_backend`): model runtime, always built from the submodule
-- **Svelte 5 + Vite + Vitest**: frontend stack, managed via npm in `apps/web/`
+- `GET /healthz` — Server health check
+- `GET /v1/models` — List available models
+- `POST /v1/sessions` — Create a chat session
+- `POST /v1/chat/completions` — Chat completion (streaming supported)
+- `GET /metrics` — Server metrics
 
-### Frontend (`apps/web/src/`)
+### Vite Proxy
 
-Svelte SPA composed of `App.svelte` and `McpPanel.svelte`, with API/service logic split into `features/*` and `shared/api/*`. `lib/chat_format.ts` contains formatting utilities (tested with Vitest in `lib/chat_format.test.ts`).
+`vite.config.ts` proxies `/healthz`, `/v1/*`, and `/metrics` to the server. The target URL is controlled by the `VITE_API_URL` env var (default: `http://localhost:8080`). Docker Compose sets this to `http://server:8080`.
 
-### Deferred Contracts
+## Testing
 
-Future API contracts are preserved but not implemented:
-- `docs/api/openapi.future.yaml` — sessions, streaming, KB, prompts, MCP
-- `docs/api/ws-events.md` — WebSocket events
+```bash
+# Run all tests
+npx vitest run
+
+# Watch mode
+npx vitest
+```
+
+Tests live in `tests/` mirroring the `src/` structure.
 
 ## Development Workflow
 
-- **Contract-first**: define/update API contracts in `docs/api/` before implementation
-- **Vertical slices**: add features end-to-end (contract → server route → frontend) one at a time
-- **`zoo-keeper` blockers**: when upstream is missing an API or has a bug, open a GitHub issue at `crybo-rybo/zoo-keeper` with reproduction context and reference it in commit notes
-- Every feature should include tests (unit + integration minimum) and documentation updates when behavior changes
+- This repo is frontend-only. Core inference logic lives in zoo-keeper-server.
+- Add features as vertical slices: API types → client function → component → test.
+- Keep components focused — one component per route/feature.

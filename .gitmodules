@@ -1,0 +1,3 @@
+[submodule "zoo-keeper-server"]
+	path = zoo-keeper-server
+	url = https://github.com/crybo-rybo/zoo-keeper-server.git

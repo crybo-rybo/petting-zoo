@@ -12,4 +12,7 @@ export default defineConfig({
       '/metrics': apiTarget,
     },
   },
+  test: {
+    exclude: ['node_modules/**', 'zoo-keeper-server/**'],
+  },
 })

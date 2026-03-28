@@ -4,15 +4,22 @@
 apps/web/node_modules/
 apps/web/dist/
 
+# Svelte/Vite
+node_modules/
+dist/
+*.local
+
 # SQLite databases
 *.db
 *.sqlite
 
 # Large files
 *.gguf
+models/
 
 # Environment and temp
 .env
+.env.*
 .cache/
 .vscode/
 tmp/

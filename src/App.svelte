@@ -1,6 +1,7 @@
 <script lang="ts">
   import Sidebar from './components/Sidebar.svelte'
   import Health from './routes/Health.svelte'
+  import Chat from './routes/Chat.svelte'
 
   let activeView: 'health' | 'chat' = $state('chat')
   let serverReady: boolean = $state(false)
@@ -24,7 +25,7 @@
     {#if activeView === 'health'}
       <Health />
     {:else if activeView === 'chat'}
-      <p style="padding: 2rem; color: #666;">Chat component coming soon...</p>
+      <Chat {serverReady} />
     {/if}
   </div>
 </div>

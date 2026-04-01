@@ -7,3 +7,15 @@ body {
   background: #111;
   color: #e5e5e5;
 }
+
+.app-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
+}

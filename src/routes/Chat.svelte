@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { fetchModels, createSession, sendChatMessage } from '../lib/api/client'
   import { parseSSEStream } from '../lib/api/sse'
   import type { ChatMessage } from '../lib/api/types'
@@ -16,7 +16,6 @@
   let isStreaming: boolean = $state(false)
   let sessionId: string | null = $state(null)
   let modelId: string | null = $state(null)
-  let error: string | null = $state(null)
   let messagesContainer: HTMLDivElement | undefined = $state(undefined)
 
   const inputDisabled = $derived(!serverReady || isStreaming || !modelId)
@@ -60,7 +59,6 @@
     if (!text || inputDisabled) return
 
     inputText = ''
-    error = null
 
     // Add user message immediately
     messages.push({ role: 'user', content: text })
@@ -137,7 +135,6 @@
       } else {
         messages[assistantIndex].content += `\n\nError: ${errorMsg}`
       }
-      error = errorMsg
     } finally {
       isStreaming = false
       scrollToBottom()
@@ -150,10 +147,6 @@
       handleSend()
     }
   }
-</script>
-
-<script module lang="ts">
-  import { tick } from 'svelte'
 </script>
 
 <div class="chat">
@@ -206,7 +199,7 @@
   .chat {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    height: 100%;
     font-family: system-ui, -apple-system, sans-serif;
   }
 

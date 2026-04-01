@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { HealthResponse, ModelsResponse, SessionSummary } from './types'
+import type { HealthResponse, ModelsResponse, SessionSummary, ChatCompletionRequest } from './types'
 
 // Will import once implemented
 // import { fetchHealth } from './client'
@@ -129,6 +129,63 @@ describe('createSession', () => {
     const { createSession } = await import('./client')
     await expect(createSession('local-model')).rejects.toThrow(
       'Session creation failed: 503'
+    )
+  })
+})
+
+describe('sendChatMessage', () => {
+  const mockRequest: ChatCompletionRequest = {
+    model: 'local-model',
+    messages: [{ role: 'user', content: 'Hello' }],
+    stream: true,
+    session_id: 'sess-abc123',
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('sends chat request and returns raw response', async () => {
+    const mockResponse = new Response('data: {}\n\n', {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+    vi.mocked(fetch).mockResolvedValue(mockResponse)
+
+    const { sendChatMessage } = await import('./client')
+    const result = await sendChatMessage(mockRequest)
+
+    expect(fetch).toHaveBeenCalledWith('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(mockRequest),
+    })
+    expect(result).toBe(mockResponse)
+  })
+
+  it('throws on non-OK response', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response('Service Unavailable', { status: 503 })
+    )
+
+    const { sendChatMessage } = await import('./client')
+    await expect(sendChatMessage(mockRequest)).rejects.toThrow(
+      'Chat request failed: 503'
+    )
+  })
+
+  it('throws on 404 session not found', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response('Not Found', { status: 404 })
+    )
+
+    const { sendChatMessage } = await import('./client')
+    await expect(sendChatMessage(mockRequest)).rejects.toThrow(
+      'Chat request failed: 404'
     )
   })
 })

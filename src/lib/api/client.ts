@@ -1,4 +1,4 @@
-import type { HealthResponse, ModelsResponse, SessionSummary } from './types'
+import type { HealthResponse, ModelsResponse, SessionSummary, ChatCompletionRequest } from './types'
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch('/healthz')
@@ -26,4 +26,18 @@ export async function createSession(model: string): Promise<SessionSummary> {
     throw new Error(`Session creation failed: ${res.status}`)
   }
   return res.json()
+}
+
+export async function sendChatMessage(
+  request: ChatCompletionRequest
+): Promise<Response> {
+  const res = await fetch('/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) {
+    throw new Error(`Chat request failed: ${res.status}`)
+  }
+  return res
 }

@@ -18,3 +18,4 @@ models/*
 .vscode/
 tmp/
 *.log
+.superpowers/

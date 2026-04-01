@@ -95,6 +95,10 @@
           session_id: currentSessionId,
         })
       } catch (e) {
+        // Handle 503 — server busy
+        if (e instanceof Error && e.message.includes('503')) {
+          throw new Error('Server busy, try again')
+        }
         // Handle session expired — auto-recreate
         if (e instanceof Error && e.message.includes('404')) {
           sessionId = null
